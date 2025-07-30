@@ -1337,8 +1337,8 @@
                     comments: topic.sampleQuotes || []
                 })),
                 modelInfo: {
-                    processingTime: 45,
-                    featuresUsed: 1200
+                    processingTime: apiData.processingTime || 0,
+                    featuresUsed: (apiData.topics || []).reduce((sum, topic) => sum + (topic.words || []).length, 0)
                 }
             };
         }

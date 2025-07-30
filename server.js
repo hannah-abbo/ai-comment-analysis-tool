@@ -26,6 +26,7 @@ app.use(express.static('public'));
 const upload = multer({ dest: 'uploads/' });
 
 app.post('/api/analyze', upload.single('file'), async (req, res) => {
+  const startTime = Date.now();
   const filePath = req.file.path;
   const results = [];
   
@@ -289,8 +290,13 @@ Respond in JSON format:
             totalComments: comments.length,
             coherenceScore: Math.round(coherenceScore * 100) / 100,
             avgWordCount,
-            processingTime: Date.now() - Date.now(), // Will be set properly
+            processingTime: Math.round((Date.now() - startTime) / 1000 * 10) / 10,
             topics: cleanTopics,
+            metadata: {
+              aiEnhanced: cleanTopics.some(t => t.enhancedByAI),
+              totalTopics: cleanTopics.length,
+              highPriorityCount: cleanTopics.filter(t => t.businessImpact === 'high').length
+            },
             sentiment: {
               overall: {
                 positive: sentimentAnalysis.filter(s => s.classification === 'positive').length,
