@@ -9,11 +9,11 @@ const stopword = require('stopword');
 const sentiment = require('sentiment');
 const kmeans = require('ml-kmeans');
 const _ = require('lodash');
-const OpenAI = require('openai');
+const Anthropic = require('@anthropic-ai/sdk');
 
-// Initialize OpenAI client (requires OPENAI_API_KEY environment variable)
-const openai = process.env.OPENAI_API_KEY ? new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
+// Initialize Anthropic client (requires ANTHROPIC_API_KEY environment variable)
+const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY
 }) : null;
 
 const app = express();
@@ -198,9 +198,9 @@ app.post('/api/analyze', upload.single('file'), async (req, res) => {
           });
         }
         
-        // GenAI Theme Classification using LLM
+        // GenAI Theme Classification using Claude
         let finalTopics = topicAnalysis;
-        if (openai && topicAnalysis.length > 0) {
+        if (anthropic && topicAnalysis.length > 0) {
           try {
             const enhancedTopics = await Promise.all(topicAnalysis.map(async (topic) => {
               const topWords = topic.words.slice(0, 5).map(w => w.term).join(', ');
@@ -226,14 +226,14 @@ Respond in JSON format:
 }`;
               
               try {
-                const response = await openai.chat.completions.create({
-                  model: "gpt-3.5-turbo",
-                  messages: [{ role: "user", content: prompt }],
+                const response = await anthropic.messages.create({
+                  model: "claude-3-haiku-20240307",
                   max_tokens: 200,
-                  temperature: 0.3
+                  temperature: 0.3,
+                  messages: [{ role: "user", content: prompt }]
                 });
                 
-                const llmResponse = JSON.parse(response.choices[0].message.content);
+                const llmResponse = JSON.parse(response.content[0].text);
                 
                 // Tag each comment in this group with the theme
                 const taggedComments = topic.comments.map(comment => ({

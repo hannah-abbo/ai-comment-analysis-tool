@@ -5,7 +5,7 @@ Transform hours of manual customer feedback analysis into minutes of AI-powered 
 ## Features
 
 - **LDA Topic Modeling**: Automatically discovers hidden themes
-- **GenAI Classification**: Uses OpenAI to name and categorize themes
+- **GenAI Classification**: Uses Claude AI to name and categorize themes
 - **Business Intelligence**: Priority-ranked actionable insights
 - **Interactive Dashboard**: Professional UI with filters and chat
 - **Export Options**: PDF reports, CSV data, shareable links
@@ -20,7 +20,7 @@ npm start
 
 ### Environment Variables (Optional)
 ```bash
-OPENAI_API_KEY=your_openai_api_key_here
+ANTHROPIC_API_KEY=sk-ant-your_anthropic_api_key_here
 PORT=3000
 ```
 
@@ -47,6 +47,6 @@ PORT=3000
 
 ## Tech Stack
 
-- **Backend**: Node.js, Express, Natural.js, OpenAI
+- **Backend**: Node.js, Express, Natural.js, Claude AI
 - **Frontend**: HTML5, CSS3, JavaScript (Vanilla)
-- **AI/ML**: LDA Topic Modeling, K-Means Clustering, GPT Integration
+- **AI/ML**: LDA Topic Modeling, K-Means Clustering, Claude Integration
