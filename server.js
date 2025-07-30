@@ -302,8 +302,8 @@ Respond in JSON format:
             businessInsights: {
               highPriorityThemes: cleanTopics.filter(t => t.businessImpact === 'high').length,
               negativeThemePercentage: Math.round(
-                (cleanTopics.filter(t => t.sentiment && t.sentiment.classification === 'negative').length / 
-                cleanTopics.length) * 100
+                (cleanTopics.filter(t => t.sentiment.classification === 'negative').length / 
+                (cleanTopics.length || 1)) * 100
               ),
               aiEnhanced: cleanTopics.some(t => t.enhancedByAI),
               actionableInsights: cleanTopics.slice(0, 3).map(topic => ({
