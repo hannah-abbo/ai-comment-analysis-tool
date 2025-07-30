@@ -1323,17 +1323,17 @@
             return {
                 totalComments: apiData.totalComments,
                 avgWordCount: apiData.avgWordCount || 12,
-                sentimentDistribution: apiData.sentiment.overall,
-                coherenceScore: apiData.coherenceScore,
-                themes: apiData.topics.map((topic, index) => ({
+                sentimentDistribution: apiData.sentiment?.overall || { positive: 0, negative: 0, neutral: 0 },
+                coherenceScore: apiData.coherenceScore || 0.5,
+                themes: (apiData.topics || []).filter(topic => topic && topic.title).map((topic, index) => ({
                     id: `theme-${index + 1}`,
-                    name: topic.title,
-                    percentage: topic.percentage,
-                    size: topic.volume,
-                    sentiment: topic.sentiment.classification,
-                    avgWords: topic.avgWordCount,
-                    confidence: topic.confidence / 100,
-                    topWords: topic.words.map(w => w.term),
+                    name: topic.title || `Theme ${index + 1}`,
+                    percentage: topic.percentage || 0,
+                    size: topic.volume || 0,
+                    sentiment: topic.sentiment?.classification || 'neutral',
+                    avgWords: topic.avgWordCount || 0,
+                    confidence: (topic.confidence || 70) / 100,
+                    topWords: (topic.words || []).map(w => w?.term || 'unknown'),
                     comments: topic.sampleQuotes || []
                 })),
                 modelInfo: {
@@ -1787,14 +1787,14 @@
         function updateAnalysisSummary(results) {
             const summaryDiv = document.getElementById('analysisSummary');
             const analysisTime = new Date().toLocaleString();
-            const topTheme = allThemes[0];
+            const topTheme = allThemes && allThemes.length > 0 ? allThemes[0] : null;
             
             summaryDiv.innerHTML = `
                 <strong>Completed:</strong> ${analysisTime}<br>
                 <strong>Comments Analyzed:</strong> ${results.totalComments.toLocaleString()}<br>
                 <strong>Themes Discovered:</strong> ${allThemes.length}<br>
-                <strong>Top Theme:</strong> ${topTheme.name} (${topTheme.percentage}%)<br>
-                <strong>Avg Confidence:</strong> ${(allThemes.reduce((sum, t) => sum + t.confidence, 0) / allThemes.length * 100).toFixed(1)}%
+                ${topTheme ? `<strong>Top Theme:</strong> ${topTheme.name} (${topTheme.percentage}%)<br>` : ''}
+                <strong>Avg Confidence:</strong> ${allThemes.length > 0 ? (allThemes.reduce((sum, t) => sum + (t.confidence || 0), 0) / allThemes.length * 100).toFixed(1) : 0}%
             `;
         }
 
