@@ -1040,17 +1040,15 @@
                     statusText.textContent = data.status || 'Connected to Analysis API';
                 })
                 .catch(error => {
-                    // Fallback to mock mode
-                    setTimeout(() => {
-                        const statusElement = document.getElementById('connectionStatus');
-                        const statusIcon = document.getElementById('statusIcon');
-                        const statusText = document.getElementById('statusText');
-                        
-                        databricksConnected = true;
-                        statusElement.className = 'connection-status connected';
-                        statusIcon.textContent = '🟡';
-                        statusText.textContent = 'Demo Mode - Using Mock Data';
-                    }, 2000);
+                    console.error('Backend connection failed:', error);
+                    const statusElement = document.getElementById('connectionStatus');
+                    const statusIcon = document.getElementById('statusIcon');
+                    const statusText = document.getElementById('statusText');
+                    
+                    databricksConnected = false;
+                    statusElement.className = 'connection-status disconnected';
+                    statusIcon.textContent = '🔴';
+                    statusText.textContent = 'Backend API not accessible - check server is running';
                 });
         }
 
@@ -1259,20 +1257,27 @@
             const csvBlob = new Blob([csvString], { type: 'text/csv' });
             formData.append('file', csvBlob, 'data.csv');
 
+            console.log('Sending API request to /api/analyze...');
             fetch('/api/analyze', {
                 method: 'POST',
                 body: formData
             })
             .then(response => {
+                console.log('API Response status:', response.status);
                 if (!response.ok) {
-                    throw new Error(`API Error: ${response.status}`);
+                    return response.text().then(text => {
+                        throw new Error(`API Error ${response.status}: ${text}`);
+                    });
                 }
                 return response.json();
             })
             .then(result => {
-                console.log('Real API Results:', result);
+                console.log('API Response:', result);
                 if (result.success) {
+                    console.log('Transforming API results...');
                     const results = transformApiResults(result.data);
+                    console.log('Transformed results:', results);
+                    
                     displayResults(results);
                     showModelInfo(results);
                     
@@ -1288,22 +1293,9 @@
                 }
             })
             .catch(error => {
-                console.warn('API failed, falling back to mock:', error);
-                // Fallback to mock analysis
-                setTimeout(() => {
-                    const analysisDepth = 4 + Math.floor(Math.random() * 4);
-                    const results = performMockAnalysis(analysisDepth);
-                    displayResults(results);
-                    showModelInfo(results);
-                    
-                    document.getElementById('loadingSection').style.display = 'none';
-                    document.getElementById('resultsSection').style.display = 'block';
-                    document.getElementById('filtersSection').style.display = 'block';
-                    document.getElementById('chatSection').style.display = 'block';
-                    document.getElementById('exportSection').style.display = 'block';
-                    
-                    updateAnalysisSummary(results);
-                }, 2000);
+                console.error('API Analysis Failed:', error);
+                document.getElementById('loadingSection').style.display = 'none';
+                showError(`Analysis failed: ${error.message}. Please check that the server is running and your file is properly formatted.`);
             });
         }
 
