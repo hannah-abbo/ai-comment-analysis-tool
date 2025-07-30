@@ -49,7 +49,7 @@ app.post('/api/analyze', upload.single('file'), async (req, res) => {
         
         // Enhanced text processing
         const processedComments = comments.map((comment, index) => {
-          const tokens = new natural.WordTokenizer().tokenize(comment);
+          const tokens = natural.WordTokenizer.tokenize(comment);
           const filtered = stopword.removeStopwords(tokens)
             .filter(word => word.length > 2 && /^[a-zA-Z]+$/.test(word));
           return {
