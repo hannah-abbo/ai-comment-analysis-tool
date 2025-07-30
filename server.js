@@ -299,21 +299,7 @@ Respond in JSON format:
               },
               details: sentimentAnalysis.slice(0, 20)
             },
-            businessInsights: {
-              highPriorityThemes: cleanTopics.filter(t => t.businessImpact === 'high').length,
-              negativeThemePercentage: Math.round(
-                (cleanTopics.filter(t => t.sentiment.classification === 'negative').length / 
-                (cleanTopics.length || 1)) * 100
-              ),
-              aiEnhanced: cleanTopics.some(t => t.enhancedByAI),
-              actionableInsights: cleanTopics.slice(0, 3).map(topic => ({
-                theme: topic.title,
-                priority: topic.businessImpact,
-                recommendation: (topic.sentiment && topic.sentiment.classification === 'negative') ?
-                  `Address ${topic.title.toLowerCase()} issues affecting ${topic.percentage}% of feedback` :
-                  `Leverage ${topic.title.toLowerCase()} strengths mentioned in ${topic.percentage}% of feedback`
-              }))
-            }
+            businessInsights: calculateBusinessInsights(cleanTopics),
           }
         });
         
@@ -339,6 +325,29 @@ Respond in JSON format:
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
+
+function calculateBusinessInsights(cleanTopics) {
+  const highPriorityThemes = cleanTopics.filter(t => t.businessImpact === 'high').length;
+  const negativeThemePercentage = Math.round(
+    (cleanTopics.filter(t => t.sentiment.classification === 'negative').length /
+      (cleanTopics.length || 1)) * 100
+  );
+  const aiEnhanced = cleanTopics.some(t => t.enhancedByAI);
+  const actionableInsights = cleanTopics.slice(0, 3).map(topic => ({
+    theme: topic.title,
+    priority: topic.businessImpact,
+    recommendation: (topic.sentiment && topic.sentiment.classification === 'negative') ?
+      `Address ${topic.title.toLowerCase()} issues affecting ${topic.percentage}% of feedback` :
+      `Leverage ${topic.title.toLowerCase()} strengths mentioned in ${topic.percentage}% of feedback`
+  }));
+
+  return {
+    highPriorityThemes,
+    negativeThemePercentage,
+    aiEnhanced,
+    actionableInsights
+  };
+}
 
 app.listen(port, () => {
   console.log(`Server running on http://localhost:${port}`);
