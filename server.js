@@ -183,7 +183,7 @@ app.post('/api/analyze', upload.single('file'), async (req, res) => {
               clusterComments.length > totalComments * 0.15 ? 'medium' : 'low',
             comments: clusterComments // Store for LLM processing
           });
-        }
+        });
         
         // GenAI Theme Classification using Claude
         let finalTopics = topicAnalysis;
