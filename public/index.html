@@ -1512,10 +1512,12 @@
         }
 
         function displayResults(results) {
+            console.log('displayResults called with:', results);
             // Store results globally for other functions
             analyzedResults = results;
             allThemes = results.themes || [];
             filteredThemes = [...allThemes];
+            console.log(`Displaying ${allThemes.length} themes`);
             
             const statsGrid = document.getElementById('statsGrid');
             statsGrid.innerHTML = `
@@ -1541,6 +1543,7 @@
         }
 
         function renderThemes() {
+            console.log(`renderThemes called with ${filteredThemes.length} themes`);
             const themesContainer = document.getElementById('themesContainer');
             themesContainer.innerHTML = filteredThemes.map((theme, index) => `
                 <div class="theme-card" onclick="viewTheme('${theme.id}')">

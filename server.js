@@ -35,18 +35,30 @@ app.post('/api/analyze', upload.single('file'), async (req, res) => {
     .on('data', (data) => results.push(data))
     .on('end', async () => {
       try {
+        console.log(`Processing ${results.length} rows from CSV`);
+        
         // Auto-detect comment columns (look for text-heavy columns)
         const sampleRow = results[0];
+        if (!sampleRow) {
+          throw new Error('CSV file appears to be empty or invalid');
+        }
+        
+        console.log('CSV columns found:', Object.keys(sampleRow));
+        
         const commentColumns = Object.keys(sampleRow).filter(key => {
           const avgLength = results.slice(0, 10).reduce((sum, row) => 
             sum + (row[key] || '').length, 0) / 10;
           return avgLength > 20; // Likely comment if avg > 20 chars
         });
         
+        console.log('Detected comment columns:', commentColumns);
+        
         const comments = results.map(row => {
           const commentText = commentColumns.map(col => row[col] || '').join(' ');
           return commentText.toLowerCase().trim();
         }).filter(comment => comment.length > 10);
+        
+        console.log(`Extracted ${comments.length} valid comments from ${results.length} rows`);
         
         // Enhanced text processing
         const processedComments = comments.map((comment, index) => {
@@ -62,6 +74,8 @@ app.post('/api/analyze', upload.single('file'), async (req, res) => {
           };
         }).filter(item => item.tokens.length > 2);
         
+        console.log(`Processed ${processedComments.length} comments with sufficient tokens`);
+        
         // LDA Topic Modeling with TF-IDF
         const tfidf = new natural.TfIdf();
         processedComments.forEach(item => {
@@ -70,6 +84,12 @@ app.post('/api/analyze', upload.single('file'), async (req, res) => {
         
         // Simple topic discovery using TF-IDF term clustering
         const numTopics = Math.min(8, Math.max(3, Math.floor(processedComments.length / 15)));
+        console.log(`Creating ${numTopics} topics from ${processedComments.length} processed comments`);
+        
+        if (processedComments.length < 3) {
+          throw new Error(`Not enough valid comments to analyze. Found ${processedComments.length} processable comments, need at least 3.`);
+        }
+        
         const topicTerms = [];
         
         // Get most important terms per document
@@ -117,11 +137,17 @@ app.post('/api/analyze', upload.single('file'), async (req, res) => {
         }, 0) / topics.length;
         
         // Build topic analysis with enhanced metrics
+        console.log('Building topic analysis...');
         const topicAnalysis = [];
         topics.forEach((topic, clusterId) => {
           const clusterComments = topic.documents;
           
-          if (clusterComments.length === 0) return;
+          if (clusterComments.length === 0) {
+            console.log(`Skipping empty topic ${clusterId}`);
+            return;
+          }
+          
+          console.log(`Processing topic ${clusterId} with ${clusterComments.length} comments`);
           
           // Get top terms for this topic
           const topTerms = Object.entries(topic.terms)
@@ -186,9 +212,12 @@ app.post('/api/analyze', upload.single('file'), async (req, res) => {
           });
         });
         
+        console.log(`Generated ${topicAnalysis.length} topics for analysis`);
+        
         // GenAI Theme Classification using Claude
         let finalTopics = topicAnalysis;
         if (anthropic && topicAnalysis.length > 0) {
+          console.log('Starting Claude AI enhancement...');
           try {
             const enhancedTopics = await Promise.all(topicAnalysis.map(async (topic) => {
               const topWords = topic.words.slice(0, 5).map(w => w.term).join(', ');
@@ -249,9 +278,12 @@ Respond in JSON format:
             
             // Update with LLM-enhanced results
             finalTopics = enhancedTopics;
+            console.log('Claude AI enhancement completed');
           } catch (error) {
             console.warn('LLM enhancement failed:', error.message);
           }
+        } else {
+          console.log('Skipping Claude AI enhancement - no API key or no topics');
         }
         
         // Remove comments from response to reduce payload size
@@ -283,6 +315,8 @@ Respond in JSON format:
           sum + item.wordCount, 0) / processedComments.length);
         
         fs.unlinkSync(filePath);
+        
+        console.log(`Analysis complete! Returning ${cleanTopics.length} topics`);
         
         res.json({
           success: true,
