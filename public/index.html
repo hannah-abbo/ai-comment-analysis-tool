@@ -1025,11 +1025,47 @@
             setupEventListeners();
         };
 
+        // Manual test function for debugging (call from browser console)
+        window.testHealthCheck = function() {
+            console.log('Manual health check test...');
+            fetch('/api/health')
+                .then(response => {
+                    console.log('Manual health check - status:', response.status);
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('Manual health check - success:', data);
+                })
+                .catch(error => {
+                    console.error('Manual health check - failed:', error);
+                });
+        };
+
+        // Manual test to force connection status
+        window.forceConnection = function() {
+            console.log('Forcing databricksConnected to true');
+            databricksConnected = true;
+            const statusElement = document.getElementById('connectionStatus');
+            const statusIcon = document.getElementById('statusIcon');
+            const statusText = document.getElementById('statusText');
+            statusElement.className = 'connection-status connected';
+            statusIcon.textContent = '🟢';
+            statusText.textContent = 'Manually Connected';
+        };
+
         function checkDatabricksConnection() {
+            console.log('Checking backend connection to /api/health...');
             // Check if we're running with real backend
             fetch('/api/health')
-                .then(response => response.json())
+                .then(response => {
+                    console.log('Health check response status:', response.status);
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                    return response.json();
+                })
                 .then(data => {
+                    console.log('Health check successful:', data);
                     const statusElement = document.getElementById('connectionStatus');
                     const statusIcon = document.getElementById('statusIcon');
                     const statusText = document.getElementById('statusText');
@@ -1038,9 +1074,11 @@
                     statusElement.className = 'connection-status connected';
                     statusIcon.textContent = '🟢';
                     statusText.textContent = data.status || 'Connected to Analysis API';
+                    console.log('databricksConnected set to true');
                 })
                 .catch(error => {
                     console.error('Backend connection failed:', error);
+                    console.log('databricksConnected set to false');
                     const statusElement = document.getElementById('connectionStatus');
                     const statusIcon = document.getElementById('statusIcon');
                     const statusText = document.getElementById('statusText');
@@ -1196,7 +1234,11 @@
         }
 
         function analyzeComments() {
+            console.log('analyzeComments called');
+            console.log('databricksConnected:', databricksConnected);
+            
             if (!databricksConnected) {
+                console.log('Analysis blocked: not connected to backend');
                 showError('Not connected to analysis API. Please wait for connection to establish.');
                 return;
             }
@@ -1204,15 +1246,23 @@
             const selectedColumn = document.getElementById('columnSelect').value;
             const sourceType = document.getElementById('dataSourceType').value;
             
+            console.log('selectedColumn:', selectedColumn);
+            console.log('sourceType:', sourceType);
+            console.log('csvData exists:', !!csvData);
+            
             if (!selectedColumn) {
+                console.log('Analysis blocked: no column selected');
                 showError('Please select a comment column first.');
                 return;
             }
 
             if (sourceType === 'upload' && !csvData) {
+                console.log('Analysis blocked: no CSV data');
                 showError('Please upload a CSV file first.');
                 return;
             }
+            
+            console.log('All checks passed, proceeding with analysis...');
 
             document.getElementById('loadingSection').style.display = 'block';
             document.getElementById('resultsSection').style.display = 'none';
@@ -1223,8 +1273,10 @@
 
             // Try real API first, fallback to mock if needed
             if (sourceType === 'upload' && csvData) {
+                console.log('Calling analyzeWithRealAPI...');
                 analyzeWithRealAPI(selectedColumn);
             } else {
+                console.log('Using fallback analysis (not upload or no csvData)');
                 // Fallback to mock analysis
                 setTimeout(() => {
                     try {
