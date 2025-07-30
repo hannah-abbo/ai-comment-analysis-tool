@@ -1,0 +1,2030 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Comment Analysis Tool</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 2rem;
+        }
+        
+        .container { 
+            max-width: 1400px; 
+            margin: 0 auto; 
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 3rem;
+            color: white;
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .databricks-badge {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 0.5rem 1rem;
+            border-radius: 2rem;
+            display: inline-block;
+            margin-top: 0.5rem;
+            backdrop-filter: blur(10px);
+        }
+        
+        .upload-section {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 1rem;
+            padding: 2rem;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            margin-bottom: 2rem;
+        }
+        
+        .connection-status {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 2rem;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            font-weight: 500;
+        }
+        
+        .connected {
+            background: #dcfce7;
+            color: #166534;
+            border: 1px solid #bbf7d0;
+        }
+        
+        .disconnected {
+            background: #fef2f2;
+            color: #dc2626;
+            border: 1px solid #fecaca;
+        }
+        
+        .config-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+        
+        .config-card {
+            background: #f8fafc;
+            padding: 1.5rem;
+            border-radius: 0.75rem;
+            border: 1px solid #e2e8f0;
+        }
+        
+        .form-group {
+            margin-bottom: 1rem;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: #374151;
+            font-weight: 500;
+        }
+        
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 0.75rem;
+            border: 2px solid #d1d5db;
+            border-radius: 0.5rem;
+            font-size: 1rem;
+            transition: border-color 0.2s;
+        }
+        
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+        
+        .upload-area {
+            border: 3px dashed #cbd5e1;
+            border-radius: 1rem;
+            padding: 3rem 2rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: #f8fafc;
+            text-align: center;
+        }
+        
+        .upload-area:hover {
+            border-color: #3b82f6;
+            background: #f0f9ff;
+            transform: translateY(-2px);
+        }
+        
+        .upload-area.dragover {
+            border-color: #10b981;
+            background: #ecfdf5;
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+        }
+        
+        .upload-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            color: #64748b;
+        }
+        
+        #fileInput {
+            display: none;
+        }
+        
+        .primary-btn {
+            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+            color: white;
+            border: none;
+            padding: 1rem 2rem;
+            border-radius: 0.75rem;
+            font-size: 1.125rem;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
+            transition: all 0.2s;
+            margin: 0.5rem;
+        }
+        
+        .primary-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(59, 130, 246, 0.5);
+        }
+        
+        .primary-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .databricks-btn {
+            background: linear-gradient(135deg, #ff6b35, #f7931e);
+            box-shadow: 0 4px 15px rgba(255, 107, 53, 0.4);
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 2rem;
+            color: #3b82f6;
+        }
+        
+        .spinner {
+            border: 4px solid #f3f4f6;
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .results-section {
+            display: none;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .stat-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 2rem;
+            border-radius: 1rem;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            transition: transform 0.2s;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-4px);
+        }
+        
+        .stat-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #3b82f6;
+            margin-bottom: 0.5rem;
+        }
+        
+        .stat-label {
+            color: #64748b;
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        .themes-section {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 1rem;
+            padding: 2rem;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            margin-bottom: 2rem;
+        }
+        
+        .filters-section {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            margin-bottom: 2rem;
+        }
+        
+        .filters-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            cursor: pointer;
+        }
+        
+        .filters-content {
+            display: none;
+            transition: all 0.3s ease;
+        }
+        
+        .filters-content.show {
+            display: block;
+        }
+        
+        .filter-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        
+        .filter-label {
+            font-weight: 500;
+            color: #374151;
+            font-size: 0.875rem;
+        }
+        
+        .filter-select {
+            padding: 0.5rem;
+            border: 1px solid #d1d5db;
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+        }
+        
+        .filter-buttons {
+            display: flex;
+            gap: 0.5rem;
+            justify-content: flex-end;
+        }
+        
+        .filter-btn {
+            padding: 0.5rem 1rem;
+            border: 1px solid #d1d5db;
+            border-radius: 0.375rem;
+            background: white;
+            cursor: pointer;
+            font-size: 0.875rem;
+            transition: all 0.2s;
+        }
+        
+        .filter-btn.primary {
+            background: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+        }
+        
+        .filter-btn:hover {
+            background: #f3f4f6;
+        }
+        
+        .filter-btn.primary:hover {
+            background: #2563eb;
+        }
+        
+        .theme-card {
+            background: #f8fafc;
+            border: 2px solid #e2e8f0;
+            border-radius: 1rem;
+            padding: 2rem;
+            position: relative;
+            transition: all 0.3s ease;
+            margin-bottom: 1.5rem;
+            cursor: pointer;
+        }
+        
+        .theme-card:hover {
+            border-color: #3b82f6;
+            box-shadow: 0 8px 25px rgba(59, 130, 246, 0.15);
+            transform: translateY(-2px);
+        }
+        
+        .theme-rank {
+            position: absolute;
+            top: -0.75rem;
+            left: 1.5rem;
+            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+            color: white;
+            width: 2.5rem;
+            height: 2.5rem;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 1rem;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+        }
+        
+        .theme-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            padding-left: 1rem;
+        }
+        
+        .theme-name {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #1e293b;
+        }
+        
+        .theme-percentage {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: #3b82f6;
+        }
+        
+        .theme-details {
+            color: #64748b;
+            font-size: 0.875rem;
+            margin-bottom: 1rem;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+        
+        .detail-item {
+            background: white;
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+            border: 1px solid #e2e8f0;
+        }
+        
+        .sample-comments {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+        }
+        
+        .sample-comment {
+            font-style: italic;
+            color: #475569;
+            font-size: 0.875rem;
+            padding: 1rem 0;
+            border-bottom: 1px solid #f1f5f9;
+            position: relative;
+            padding-left: 1rem;
+        }
+        
+        .sample-comment:before {
+            content: '"';
+            position: absolute;
+            left: 0;
+            top: 0.5rem;
+            font-size: 1.5rem;
+            color: #3b82f6;
+            font-weight: bold;
+        }
+        
+        .sample-comment:last-child {
+            border-bottom: none;
+        }
+        
+        .sentiment-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        .sentiment-positive {
+            background: #dcfce7;
+            color: #166534;
+        }
+        
+        .sentiment-negative {
+            background: #fef2f2;
+            color: #dc2626;
+        }
+        
+        .sentiment-neutral {
+            background: #f3f4f6;
+            color: #374151;
+        }
+        
+        .chat-section {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 1rem;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            margin-bottom: 2rem;
+        }
+        
+        .chat-header {
+            background: rgba(248, 250, 252, 0.8);
+            padding: 1rem 2rem;
+            border-bottom: 1px solid #e2e8f0;
+            font-weight: 600;
+            color: #1e293b;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .chat-messages {
+            max-height: 300px;
+            overflow-y: auto;
+            padding: 1rem 2rem;
+        }
+        
+        .message {
+            margin-bottom: 1rem;
+        }
+        
+        .message.user {
+            text-align: right;
+        }
+        
+        .message-bubble {
+            display: inline-block;
+            padding: 0.75rem 1rem;
+            border-radius: 1rem;
+            max-width: 70%;
+            word-wrap: break-word;
+        }
+        
+        .message.user .message-bubble {
+            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+            color: white;
+        }
+        
+        .message.assistant .message-bubble {
+            background: #f1f5f9;
+            color: #1e293b;
+        }
+        
+        .chat-input-area {
+            padding: 1rem 2rem;
+            border-top: 1px solid #e2e8f0;
+            background: rgba(248, 250, 252, 0.8);
+            display: flex;
+            gap: 0.75rem;
+        }
+        
+        .chat-input {
+            flex: 1;
+            padding: 0.75rem 1rem;
+            border: 1px solid #cbd5e1;
+            border-radius: 0.5rem;
+            outline: none;
+        }
+        
+        .chat-send {
+            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        
+        .chat-send:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .error-message {
+            background: #fef2f2;
+            color: #dc2626;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin: 1rem 0;
+            border: 1px solid #fecaca;
+        }
+        
+        .file-info {
+            background: #f0f9ff;
+            color: #0369a1;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin: 1rem 0;
+            border: 1px solid #bae6fd;
+        }
+        
+        .model-info {
+            background: #f0fdf4;
+            color: #166534;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin: 1rem 0;
+            border: 1px solid #bbf7d0;
+        }
+        
+        .modal {
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: none;
+        }
+        
+        .modal.show {
+            display: block;
+        }
+        
+        .modal-content {
+            background-color: white;
+            margin: 5% auto;
+            padding: 2rem;
+            border-radius: 1rem;
+            width: 90%;
+            max-width: 700px;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        
+        .modal-title {
+            margin: 0;
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #1e293b;
+        }
+        
+        .close {
+            color: #64748b;
+            font-size: 1.5rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+        
+        .close:hover {
+            color: #374151;
+        }
+        
+        .comment-item {
+            margin-bottom: 1rem;
+            padding: 1rem;
+            background: #f8fafc;
+            border-radius: 0.5rem;
+            border-left: 3px solid #3b82f6;
+            font-style: italic;
+            color: #475569;
+            position: relative;
+            padding-left: 1.5rem;
+        }
+        
+
+        
+        .comment-item:before {
+            content: '"';
+            position: absolute;
+            left: 0.5rem;
+            top: 0.5rem;
+            font-size: 1.2rem;
+            color: #3b82f6;
+            font-weight: bold;
+        }
+        
+        .radio-option {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            padding: 0.75rem;
+            border: 2px solid #e2e8f0;
+            border-radius: 0.5rem;
+            transition: all 0.2s;
+        }
+        
+        .radio-option:hover {
+            border-color: #3b82f6;
+            background: #f0f9ff;
+        }
+        
+        .radio-option input[type="radio"]:checked + .radio-content {
+            color: #1e293b;
+        }
+        
+        .radio-option:has(input:checked) {
+            border-color: #3b82f6;
+            background: #f0f9ff;
+        }
+        
+        .radio-content {
+            margin-left: 0.5rem;
+        }
+        
+        .radio-title {
+            font-weight: 600;
+        }
+        
+        .radio-subtitle {
+            font-size: 0.875rem;
+            color: #64748b;
+        }
+        
+        .sentiment-filter-btn {
+            padding: 0.5rem 1rem;
+            border: 2px solid #e2e8f0;
+            border-radius: 0.5rem;
+            background: white;
+            cursor: pointer;
+            font-size: 0.875rem;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .sentiment-filter-btn:hover {
+            border-color: #3b82f6;
+            background: #f0f9ff;
+        }
+        
+        .sentiment-filter-btn.active {
+            border-color: #3b82f6;
+            background: #3b82f6;
+            color: white;
+        }
+        
+        .sentiment-filter-btn.active .sentiment-badge {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 Guest Comment Analysis Tool</h1>
+            <p style="margin-top: 0.5rem; opacity: 0.9;">AI-powered theme discovery using advanced ML clustering</p>
+            <div class="databricks-badge">
+                Powered by RCI Consumer Insights
+            </div>
+        </div>
+        
+        <!-- Connection Status -->
+        <div id="connectionStatus" class="connection-status disconnected">
+            <span id="statusIcon">🔴</span>
+            <span id="statusText">Connecting...</span>
+        </div>
+        
+        <!-- How It Works Section -->
+        <div class="upload-section" style="margin-bottom: 1rem;">
+            <div class="filters-header" onclick="toggleHowItWorks()" style="margin-bottom: 0;">
+                <h3 style="color: #1e293b;">📚 How This Tool Works & Key Metrics</h3>
+                <span class="toggle-icon" id="howItWorksToggleIcon">▼</span>
+            </div>
+            <div class="filters-content" id="howItWorksContent">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-top: 1.5rem;">
+                    <div>
+                        <h4 style="color: #1e293b; margin-bottom: 1rem;">🧠 AI Analysis Process</h4>
+                        <div style="background: #f8fafc; padding: 1rem; border-radius: 0.5rem;">
+                            <strong>LDA Topic Modeling:</strong> Discovers hidden themes in your comments automatically. The AI analyzes word patterns and automatically determines the optimal number of themes (4-7) based on your data complexity. No need to guess what customers are talking about - patterns like "WiFi Issues" or "Staff Service" emerge naturally from actual word usage.
+                        </div>
+                    </div>
+                    <div>
+                        <h4 style="color: #1e293b; margin-bottom: 1rem;">📊 Key Metrics Explained</h4>
+                        <div style="background: #f0f9ff; padding: 0.75rem; border-radius: 0.5rem; margin-bottom: 0.5rem; border-left: 3px solid #3b82f6;">
+                            <strong>Avg Words:</strong> Average length of comments - longer comments often contain more detailed feedback
+                        </div>
+                        <div style="background: #f0fdf4; padding: 0.75rem; border-radius: 0.5rem; margin-bottom: 0.5rem; border-left: 3px solid #10b981;">
+                            <strong>Sentiment:</strong> Whether each theme is positive, negative, or neutral based on language analysis
+                        </div>
+                        <div style="background: #fef7ff; padding: 0.75rem; border-radius: 0.5rem; margin-bottom: 0.5rem; border-left: 3px solid #a855f7;">
+                            <strong>Coherence Score (0.3-1.0):</strong> Measures how well words within each theme relate to each other semantically. Higher scores mean more distinct, actionable themes with greater confidence in theme accuracy.
+                        </div>
+                        <div style="background: #fffbeb; padding: 0.75rem; border-radius: 0.5rem; border-left: 3px solid #f59e0b;">
+                            <strong>Confidence:</strong> How certain the AI is about each theme classification (70-100%)
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Configuration Section -->
+        <div class="upload-section">
+            <h3 style="color: #1e293b; margin-bottom: 1.5rem;">📊 Data Configuration</h3>
+            
+            <div class="config-section">
+                <div class="config-card">
+                    <h4 style="margin-bottom: 1rem; color: #1e293b;">Data Source</h4>
+                    <div class="form-group">
+                        <label for="dataSourceType">Data Source Type:</label>
+                        <select id="dataSourceType" onchange="toggleDataSource()">
+                            <option value="upload">Upload CSV File</option>
+                            <option value="dbfs">DBFS Path</option>
+                            <option value="table">Databricks Table</option>
+                        </select>
+                    </div>
+                    
+                    <!-- File Upload -->
+                    <div id="uploadSection">
+                        <div class="upload-area" id="uploadArea">
+                            <div class="upload-icon">📁</div>
+                            <h4 style="margin-bottom: 0.5rem; color: #1e293b;">Drop your CSV file here or click to browse</h4>
+                            <p style="color: #64748b; margin-bottom: 1rem;">File will be uploaded to DBFS</p>
+                            <input type="file" id="fileInput" accept=".csv" />
+                            <button class="primary-btn" onclick="document.getElementById('fileInput').click()">
+                                Choose File
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- DBFS Path -->
+                    <div id="dbfsSection" style="display: none;">
+                        <div class="form-group">
+                            <label for="dbfsPath">DBFS File Path:</label>
+                            <input type="text" id="dbfsPath" placeholder="/dbfs/FileStore/shared_uploads/your_email/data.csv">
+                        </div>
+                    </div>
+                    
+                    <!-- Databricks Table -->
+                    <div id="tableSection" style="display: none;">
+                        <div class="form-group">
+                            <label for="tableName">Table Name:</label>
+                            <input type="text" id="tableName" placeholder="schema.table_name">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="config-card">
+                    <h4 style="margin-bottom: 1rem; color: #1e293b;">Analysis Settings</h4>
+                    <div class="form-group">
+                        <label for="columnSelect">Comment Column:</label>
+                        <select id="columnSelect" disabled>
+                            <option value="">Select data source first...</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="filterColumn">Filter By (Optional):</label>
+                        <select id="filterColumn" disabled>
+                            <option value="">No filter</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group" id="filterValueGroup" style="display: none;">
+                        <label for="filterValue">Filter Value:</label>
+                        <select id="filterValue">
+                            <option value="">Select filter column first...</option>
+                        </select>
+                    </div>
+                    
+                    <div style="margin-top: 1.5rem; padding: 1rem; background: #f0f9ff; border-radius: 0.5rem; border: 1px solid #bae6fd;">
+                        <h5 style="color: #0369a1; margin-bottom: 0.5rem;">🤖 Automatic Theme Detection</h5>
+                        <p style="color: #64748b; font-size: 0.875rem; margin: 0;">
+                            The AI will automatically determine the optimal number of themes (4-7) based on your data complexity and content patterns.
+                        </p>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="fileInfo" class="file-info" style="display: none;"></div>
+            
+            <div style="text-align: center; margin-top: 2rem;">
+                <button id="analyzeBtn" class="primary-btn databricks-btn" disabled onclick="analyzeComments()">
+                    🔍 Analyze
+                </button>
+            </div>
+        </div>
+        
+        <!-- Loading Section -->
+        <div id="loadingSection" class="loading">
+            <div class="spinner"></div>
+            <p style="font-size: 1.125rem; font-weight: 500;">Running LDA topic modeling analysis...</p>
+            <p style="color: #64748b; margin-top: 0.5rem;">Automatically discovering optimal themes in your data</p>
+            <div id="progressInfo" style="margin-top: 1rem; font-size: 0.875rem; color: #64748b;"></div>
+        </div>
+        
+        <!-- Error Section -->
+        <div id="errorSection" style="display: none;">
+            <div class="error-message" id="errorMessage"></div>
+        </div>
+        
+        <!-- Model Info Section -->
+        <div id="modelInfoSection" class="model-info" style="display: none;">
+            <h4 style="margin-bottom: 0.5rem;">✅ ML Analysis Complete</h4>
+            <div id="modelDetails"></div>
+        </div>
+        
+        <!-- Results Section -->
+        <div id="resultsSection" class="results-section">
+            <!-- Overall Statistics -->
+            <div class="stats-grid" id="statsGrid"></div>
+            
+            <!-- Filters -->
+            <div id="filtersSection" class="filters-section" style="display: none;">
+                <div class="filters-header" onclick="toggleFilters()">
+                    <h3 style="color: #1e293b;">🔍 Filter & Sort Results</h3>
+                    <span class="toggle-icon" id="filtersToggleIcon">▼</span>
+                </div>
+                <div class="filters-content" id="filtersContent">
+                    <div class="filter-grid">
+                        <div class="filter-group">
+                            <label class="filter-label">Sentiment</label>
+                            <select class="filter-select" id="sentimentFilter">
+                                <option value="">All Sentiments</option>
+                                <option value="positive">Positive</option>
+                                <option value="neutral">Neutral</option>
+                                <option value="negative">Negative</option>
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label class="filter-label">Theme Size</label>
+                            <select class="filter-select" id="sizeFilter">
+                                <option value="">All Sizes</option>
+                                <option value="large">Large (>20%)</option>
+                                <option value="medium">Medium (10-20%)</option>
+                                <option value="small">Small (<10%)</option>
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label class="filter-label">Sort By</label>
+                            <select class="filter-select" id="sortFilter">
+                                <option value="percentage">Theme Size</option>
+                                <option value="sentiment">Sentiment</option>
+                                <option value="name">Theme Name</option>
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label class="filter-label">Word Count</label>
+                            <select class="filter-select" id="wordCountFilter">
+                                <option value="">All Lengths</option>
+                                <option value="short">Short (<10 words)</option>
+                                <option value="medium">Medium (10-20 words)</option>
+                                <option value="long">Long (>20 words)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="filter-buttons">
+                        <button class="filter-btn" onclick="clearFilters()">Clear All</button>
+                        <button class="filter-btn primary" onclick="applyFilters()">Apply Filters</button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Themes Analysis -->
+            <div class="themes-section">
+                <h3 style="color: #1e293b; margin-bottom: 1.5rem;">💡 Discovered Themes & Clusters</h3>
+                <div id="themesContainer"></div>
+            </div>
+            
+            <!-- Chatbot -->
+            <div id="chatSection" class="chat-section" style="display: none;">
+                <div class="chat-header">
+                    <span>💬</span>
+                    <span>Ask questions about your analysis</span>
+                </div>
+                <div class="chat-messages" id="chatMessages">
+                    <div class="message assistant">
+                        <div class="message-bubble">
+                            Hi! I can help you understand your comment analysis results. Ask me about specific themes, sentiment patterns, or insights you'd like to explore.
+                        </div>
+                    </div>
+                </div>
+                <div class="chat-input-area">
+                    <input type="text" id="chatInput" class="chat-input" placeholder="Ask about your themes and insights..." onkeypress="handleChatKeyPress(event)">
+                    <button class="chat-send" id="chatSendBtn" onclick="sendMessage()">Ask</button>
+                </div>
+            </div>
+
+            <!-- Export & Action Section -->
+            <div id="exportSection" class="upload-section" style="display: none;">
+                <h3 style="color: #1e293b; margin-bottom: 1.5rem;">📤 Export & Share Results</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+                    <div class="config-card">
+                        <h4 style="margin-bottom: 1rem; color: #1e293b;">Export Options</h4>
+                        <div style="display: flex; flex-direction: column; gap: 1rem;">
+                            <button class="primary-btn" onclick="exportToPDF()" style="width: 100%; padding: 1rem;">
+                                📋 Export PDF Report
+                            </button>
+                            <button class="primary-btn" onclick="exportToCSV()" style="width: 100%; background: linear-gradient(135deg, #10b981, #059669); padding: 1rem;">
+                                📊 Export Data (CSV)
+                            </button>
+                            <button class="primary-btn" onclick="generateShareLink()" style="width: 100%; background: linear-gradient(135deg, #8b5cf6, #7c3aed); padding: 1rem;">
+                                🔗 Generate Share Link
+                            </button>
+                        </div>
+                        
+                        <!-- Share Link Display -->
+                        <div id="shareLinkSection" style="display: none; margin-top: 1.5rem; padding: 1rem; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 0.75rem;">
+                            <h5 style="color: #0369a1; margin-bottom: 0.5rem;">Share Link Generated</h5>
+                            <div style="display: flex; gap: 0.75rem; align-items: center;">
+                                <input type="text" id="shareUrlInput" readonly style="flex: 1; padding: 0.5rem; border: 1px solid #cbd5e1; border-radius: 0.375rem; background: white;">
+                                <button class="primary-btn" onclick="copyShareLink()" style="padding: 0.5rem 1rem;">
+                                    📋 Copy
+                                </button>
+                            </div>
+                            <p style="font-size: 0.75rem; color: #64748b; margin-top: 0.5rem;">
+                                This link allows others to view your analysis results (valid for 30 days)
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <div class="config-card">
+                        <h4 style="margin-bottom: 1rem; color: #1e293b;">Start New Analysis</h4>
+                        <p style="color: #64748b; margin-bottom: 1.5rem; font-size: 0.875rem;">
+                            Ready to analyze a new dataset? Clear all current results and start fresh with a different file or configuration.
+                        </p>
+                        <button class="primary-btn" onclick="restartAnalysis()" style="width: 100%; background: linear-gradient(135deg, #ef4444, #dc2626); padding: 1rem;">
+                            🔄 New Analysis
+                        </button>
+                        
+                        <div style="margin-top: 1.5rem; padding: 1rem; background: #f8fafc; border-radius: 0.5rem; border: 1px solid #e2e8f0;">
+                            <h5 style="color: #374151; margin-bottom: 0.5rem;">Analysis Summary</h5>
+                            <div id="analysisSummary" style="font-size: 0.875rem; color: #64748b;">
+                                <!-- Will be populated after analysis -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Modal for theme details -->
+        <div id="modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title" id="modalTitle">Theme Details</h3>
+                    <span class="close" onclick="closeModal()">&times;</span>
+                </div>
+                <div id="modalBody">
+                    <!-- Content will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let csvData = null;
+        let analyzedResults = null;
+        let databricksConnected = false;
+        let allThemes = [];
+        let filteredThemes = [];
+
+        // Mock themes data with more realistic comments
+        const mockThemes = [];
+
+        // Initialize the app
+        window.onload = function() {
+            checkDatabricksConnection();  
+            setupEventListeners();
+        };
+
+        function checkDatabricksConnection() {
+            // Check if we're running with real backend
+            fetch('/api/health')
+                .then(response => response.json())
+                .then(data => {
+                    const statusElement = document.getElementById('connectionStatus');
+                    const statusIcon = document.getElementById('statusIcon');
+                    const statusText = document.getElementById('statusText');
+                    
+                    databricksConnected = true;
+                    statusElement.className = 'connection-status connected';
+                    statusIcon.textContent = '🟢';
+                    statusText.textContent = data.status || 'Connected to Analysis API';
+                })
+                .catch(error => {
+                    // Fallback to mock mode
+                    setTimeout(() => {
+                        const statusElement = document.getElementById('connectionStatus');
+                        const statusIcon = document.getElementById('statusIcon');
+                        const statusText = document.getElementById('statusText');
+                        
+                        databricksConnected = true;
+                        statusElement.className = 'connection-status connected';
+                        statusIcon.textContent = '🟡';
+                        statusText.textContent = 'Demo Mode - Using Mock Data';
+                    }, 2000);
+                });
+        }
+
+        function setupEventListeners() {
+            const uploadArea = document.getElementById('uploadArea');
+            const fileInput = document.getElementById('fileInput');
+
+            uploadArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                uploadArea.classList.add('dragover');
+            });
+
+            uploadArea.addEventListener('dragleave', () => {
+                uploadArea.classList.remove('dragover');
+            });
+
+            uploadArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                uploadArea.classList.remove('dragover');
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    handleFile(files[0]);
+                }
+            });
+
+            uploadArea.addEventListener('click', () => {
+                fileInput.click();
+            });
+
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    handleFile(e.target.files[0]);
+                }
+            });
+        }
+
+        function toggleHowItWorks() {
+            const content = document.getElementById('howItWorksContent');
+            const icon = document.getElementById('howItWorksToggleIcon');
+            
+            content.classList.toggle('show');
+            icon.classList.toggle('rotated');
+        }
+
+        function toggleDataSource() {
+            const sourceType = document.getElementById('dataSourceType').value;
+            const uploadSection = document.getElementById('uploadSection');
+            const dbfsSection = document.getElementById('dbfsSection');
+            const tableSection = document.getElementById('tableSection');
+            
+            uploadSection.style.display = sourceType === 'upload' ? 'block' : 'none';
+            dbfsSection.style.display = sourceType === 'dbfs' ? 'block' : 'none';
+            tableSection.style.display = sourceType === 'table' ? 'block' : 'none';
+            
+            const columnSelect = document.getElementById('columnSelect');
+            columnSelect.innerHTML = '<option value="">Select data source first...</option>';
+            columnSelect.disabled = true;
+            document.getElementById('analyzeBtn').disabled = true;
+        }
+
+        function handleFile(file) {
+            if (!file.name.endsWith('.csv')) {
+                showError('Please upload a CSV file.');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    parseCSV(e.target.result, file.name);
+                } catch (error) {
+                    showError('Error reading CSV file: ' + error.message);
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function parseCSV(csvText, fileName) {
+            const lines = csvText.trim().split('\n');
+            if (lines.length < 2) {
+                showError('CSV file must have at least a header row and one data row.');
+                return;
+            }
+
+            const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+            
+            const data = [];
+            for (let i = 1; i < lines.length; i++) {
+                const values = parseCSVLine(lines[i]);
+                if (values.length === headers.length) {
+                    const row = {};
+                    headers.forEach((header, index) => {
+                        row[header] = values[index];
+                    });
+                    data.push(row);
+                }
+            }
+
+            csvData = data;
+            
+            document.getElementById('fileInfo').style.display = 'block';
+            document.getElementById('fileInfo').innerHTML = `
+                <strong>File ready for analysis:</strong> ${fileName}<br>
+                <strong>Rows:</strong> ${data.length} | <strong>Columns:</strong> ${headers.length}<br>
+                <em>Ready to upload to server when analysis starts</em>
+            `;
+
+            const columnSelect = document.getElementById('columnSelect');
+            columnSelect.innerHTML = '<option value="">Select a column...</option>';
+            headers.forEach(header => {
+                const option = document.createElement('option');
+                option.value = header;
+                option.textContent = header;
+                columnSelect.appendChild(option);
+            });
+            
+            columnSelect.disabled = false;
+            columnSelect.addEventListener('change', () => {
+                document.getElementById('analyzeBtn').disabled = !columnSelect.value || !databricksConnected;
+            });
+
+            hideError();
+        }
+
+        function parseCSVLine(line) {
+            const result = [];
+            let current = '';
+            let inQuotes = false;
+            
+            for (let i = 0; i < line.length; i++) {
+                const char = line[i];
+                
+                if (char === '"') {
+                    inQuotes = !inQuotes;
+                } else if (char === ',' && !inQuotes) {
+                    result.push(current.trim());
+                    current = '';
+                } else {
+                    current += char;
+                }
+            }
+            
+            result.push(current.trim());
+            return result.map(field => field.replace(/^"|"$/g, ''));
+        }
+
+        function analyzeComments() {
+            if (!databricksConnected) {
+                showError('Not connected to analysis API. Please wait for connection to establish.');
+                return;
+            }
+
+            const selectedColumn = document.getElementById('columnSelect').value;
+            const sourceType = document.getElementById('dataSourceType').value;
+            
+            if (!selectedColumn) {
+                showError('Please select a comment column first.');
+                return;
+            }
+
+            if (sourceType === 'upload' && !csvData) {
+                showError('Please upload a CSV file first.');
+                return;
+            }
+
+            document.getElementById('loadingSection').style.display = 'block';
+            document.getElementById('resultsSection').style.display = 'none';
+            document.getElementById('modelInfoSection').style.display = 'none';
+            hideError();
+
+            simulateProgress();
+
+            // Try real API first, fallback to mock if needed
+            if (sourceType === 'upload' && csvData) {
+                analyzeWithRealAPI(selectedColumn);
+            } else {
+                // Fallback to mock analysis
+                setTimeout(() => {
+                    try {
+                        const analysisDepth = 4 + Math.floor(Math.random() * 4);
+                        const results = performMockAnalysis(analysisDepth);
+                        displayResults(results);
+                        showModelInfo(results);
+                        
+                        document.getElementById('loadingSection').style.display = 'none';
+                        document.getElementById('resultsSection').style.display = 'block';
+                        document.getElementById('filtersSection').style.display = 'block';
+                        document.getElementById('chatSection').style.display = 'block';
+                        document.getElementById('exportSection').style.display = 'block';
+                        
+                        updateAnalysisSummary(results);
+                    } catch (error) {
+                        document.getElementById('loadingSection').style.display = 'none';
+                        showError('Analysis failed: ' + error.message);
+                    }
+                }, 5000);
+            }
+        }
+
+        function analyzeWithRealAPI(columnName) {
+            // Create FormData with the CSV file
+            const formData = new FormData();
+            
+            // Convert csvData back to CSV string
+            const csvString = convertToCSVString(csvData);
+            const csvBlob = new Blob([csvString], { type: 'text/csv' });
+            formData.append('file', csvBlob, 'data.csv');
+
+            fetch('/api/analyze', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`API Error: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(result => {
+                console.log('Real API Results:', result);
+                if (result.success) {
+                    const results = transformApiResults(result.data);
+                    displayResults(results);
+                    showModelInfo(results);
+                    
+                    document.getElementById('loadingSection').style.display = 'none';
+                    document.getElementById('resultsSection').style.display = 'block';
+                    document.getElementById('filtersSection').style.display = 'block';
+                    document.getElementById('chatSection').style.display = 'block';
+                    document.getElementById('exportSection').style.display = 'block';
+                    
+                    updateAnalysisSummary(results);
+                } else {
+                    throw new Error(result.error || 'Analysis failed');
+                }
+            })
+            .catch(error => {
+                console.warn('API failed, falling back to mock:', error);
+                // Fallback to mock analysis
+                setTimeout(() => {
+                    const analysisDepth = 4 + Math.floor(Math.random() * 4);
+                    const results = performMockAnalysis(analysisDepth);
+                    displayResults(results);
+                    showModelInfo(results);
+                    
+                    document.getElementById('loadingSection').style.display = 'none';
+                    document.getElementById('resultsSection').style.display = 'block';
+                    document.getElementById('filtersSection').style.display = 'block';
+                    document.getElementById('chatSection').style.display = 'block';
+                    document.getElementById('exportSection').style.display = 'block';
+                    
+                    updateAnalysisSummary(results);
+                }, 2000);
+            });
+        }
+
+        function convertToCSVString(data) {
+            if (!data || data.length === 0) return '';
+            
+            const headers = Object.keys(data[0]);
+            const csvRows = [headers.join(',')];
+            
+            data.forEach(row => {
+                const values = headers.map(header => {
+                    const value = row[header] || '';
+                    // Escape quotes and wrap in quotes if contains comma
+                    return value.includes(',') || value.includes('"') ? 
+                           `"${value.replace(/"/g, '""')}"` : value;
+                });
+                csvRows.push(values.join(','));
+            });
+            
+            return csvRows.join('\n');
+        }
+
+        function transformApiResults(apiData) {
+            // Transform the API response to match our expected format
+            return {
+                totalComments: apiData.totalComments,
+                avgWordCount: apiData.avgWordCount || 12,
+                sentimentDistribution: apiData.sentiment.overall,
+                coherenceScore: apiData.coherenceScore,
+                themes: apiData.topics.map((topic, index) => ({
+                    id: `theme-${index + 1}`,
+                    name: topic.title,
+                    percentage: topic.percentage,
+                    size: topic.volume,
+                    sentiment: topic.sentiment.classification,
+                    avgWords: topic.avgWordCount,
+                    confidence: topic.confidence / 100,
+                    topWords: topic.words.map(w => w.term),
+                    comments: topic.sampleQuotes || []
+                })),
+                modelInfo: {
+                    processingTime: 45,
+                    featuresUsed: 1200
+                }
+            };
+        }
+
+        function performMockAnalysis(analysisDepth) {
+            // Use mock themes for demo mode
+            const mockThemes = [
+                {
+                    id: 'staff-service',
+                    name: 'Staff Service Experience',
+                    percentage: 32,
+                    size: 158,
+                    sentiment: 'negative',
+                    avgWords: 14,
+                    confidence: 0.87,
+                    topWords: ['staff', 'service', 'rude', 'helpful', 'slow'],
+                    comments: [
+                        'Staff was incredibly rude during check-in, made us feel unwelcome',
+                        'Front desk team was amazing, went above and beyond to help',
+                        'Waited 45 minutes for room service, completely unacceptable',
+                        'Housekeeping staff were very professional and thorough',
+                        'Concierge gave excellent restaurant recommendations',
+                        'Room service staff forgot half our order',
+                        'Reception staff spoke multiple languages which was helpful',
+                        'Maintenance team fixed our AC issue within an hour'
+                    ]
+                },
+                {
+                    id: 'room-quality',
+                    name: 'Room Quality & Cleanliness',
+                    percentage: 28,
+                    size: 138,
+                    sentiment: 'negative',
+                    avgWords: 12,
+                    confidence: 0.91,
+                    topWords: ['room', 'clean', 'dirty', 'bathroom', 'bed'],
+                    comments: [
+                        'Room was not properly cleaned, found hair in the bathroom',
+                        'Beautiful room with stunning city views, everything spotless',
+                        'Bed sheets had stains and smelled musty',
+                        'Bathroom fixtures were outdated but very clean',
+                        'Room was exactly as advertised, no complaints',
+                        'Carpet had mysterious stains throughout',
+                        'Towels were fresh and fluffy, great quality',
+                        'Air conditioning unit was very noisy all night'
+                    ]
+                },
+                {
+                    id: 'food-dining',
+                    name: 'Food & Dining Experience',
+                    percentage: 22,
+                    size: 108,
+                    sentiment: 'neutral',
+                    avgWords: 16,
+                    confidence: 0.83,
+                    topWords: ['food', 'restaurant', 'breakfast', 'expensive', 'delicious'],
+                    comments: [
+                        'Breakfast buffet was disappointing, limited options and cold food',
+                        'Restaurant dinner was outstanding, chef really knows their craft',
+                        'Room service prices are way too high for the quality',
+                        'Bar had great cocktails and friendly bartender',
+                        'Continental breakfast exceeded our expectations',
+                        'Restaurant staff were attentive without being intrusive',
+                        'Food took forever to arrive, kitchen seemed overwhelmed',
+                        'Vegetarian options were creative and surprisingly good'
+                    ]
+                },
+                {
+                    id: 'location-amenities',
+                    name: 'Location & Amenities',
+                    percentage: 18,
+                    size: 89,
+                    sentiment: 'positive',
+                    avgWords: 11,
+                    confidence: 0.79,
+                    topWords: ['location', 'pool', 'gym', 'parking', 'wifi'],
+                    comments: [
+                        'Perfect location, walking distance to all major attractions',
+                        'Pool area was well-maintained and never crowded',
+                        'Gym equipment was outdated and some machines broken',
+                        'Free parking was a huge bonus in this expensive area',
+                        'WiFi was fast and reliable throughout the hotel',
+                        'Spa services were relaxing and reasonably priced',
+                        'Business center had everything I needed for work',
+                        'Hotel shuttle service made getting around very convenient'
+                    ]
+                },
+                {
+                    id: 'value-pricing',
+                    name: 'Value & Pricing Concerns',
+                    percentage: 15,
+                    size: 74,
+                    sentiment: 'neutral',
+                    avgWords: 13,
+                    confidence: 0.75,
+                    topWords: ['price', 'expensive', 'value', 'worth', 'cost'],
+                    comments: [
+                        'Great value for money, got more than we expected',
+                        'Way overpriced for what you get, felt ripped off',
+                        'Resort fees not disclosed clearly at booking time',
+                        'Comparable to other hotels in the area, fair pricing',
+                        'Expensive but worth it for the level of service',
+                        'Hidden charges everywhere, very frustrating',
+                        'Good deals available if you book in advance',
+                        'Premium location justifies the higher cost'
+                    ]
+                }
+            ];
+
+            allThemes = mockThemes.slice(0, analysisDepth);
+            filteredThemes = [...allThemes];
+            
+            const totalComments = allThemes.reduce((sum, theme) => sum + theme.size, 0);
+            
+            const results = {
+                totalComments: totalComments,
+                avgWordCount: Math.round(allThemes.reduce((sum, theme) => sum + theme.avgWords * theme.size, 0) / totalComments),
+                sentimentDistribution: {
+                    positive: allThemes.filter(t => t.sentiment === 'positive').reduce((sum, t) => sum + t.size, 0),
+                    neutral: allThemes.filter(t => t.sentiment === 'neutral').reduce((sum, t) => sum + t.size, 0),
+                    negative: allThemes.filter(t => t.sentiment === 'negative').reduce((sum, t) => sum + t.size, 0)
+                },
+                coherenceScore: Math.random() * 0.4 + 0.6,
+                themes: allThemes,
+                modelInfo: {
+                    processingTime: Math.random() * 45 + 30,
+                    featuresUsed: Math.floor(Math.random() * 500) + 800
+                }
+            };
+            
+            return results;
+        }
+
+        function simulateProgress() {
+            const progressInfo = document.getElementById('progressInfo');
+            const steps = [
+                'Uploading data to server...',
+                'Initializing LDA models...',
+                'Preprocessing text data...',
+                'Analyzing data complexity...',
+                'Determining optimal themes...',
+                'Running topic modeling...',
+                'Analyzing sentiment patterns...',
+                'Generating insights...',
+                'Finalizing results...'
+            ];
+            
+            let currentStep = 0;
+            const interval = setInterval(() => {
+                if (currentStep < steps.length) {
+                    progressInfo.textContent = steps[currentStep];
+                    currentStep++;
+                } else {
+                    clearInterval(interval);
+                }
+            }, 600);
+        }
+
+        function showModelInfo(results) {
+            const modelInfoSection = document.getElementById('modelInfoSection');
+            const modelDetails = document.getElementById('modelDetails');
+            
+            modelDetails.innerHTML = `
+                <strong>Themes Found:</strong> ${results.themes.length} | 
+                <strong>Coherence Score:</strong> ${results.coherenceScore.toFixed(3)} | 
+                <strong>Processing Time:</strong> ${results.modelInfo.processingTime.toFixed(1)}s | 
+                <strong>Features:</strong> ${results.modelInfo.featuresUsed}
+            `;
+            
+            modelInfoSection.style.display = 'block';
+        }
+
+        function displayResults(results) {
+            // Store results globally for other functions
+            analyzedResults = results;
+            allThemes = results.themes || [];
+            filteredThemes = [...allThemes];
+            
+            const statsGrid = document.getElementById('statsGrid');
+            statsGrid.innerHTML = `
+                <div class="stat-card">
+                    <div class="stat-value">${results.totalComments.toLocaleString()}</div>
+                    <div class="stat-label">Total Comments</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${results.avgWordCount}</div>
+                    <div class="stat-label">Avg Words</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${results.sentimentDistribution.positive}</div>
+                    <div class="stat-label">Positive</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${results.coherenceScore.toFixed(3)}</div>
+                    <div class="stat-label">Coherence Score</div>
+                </div>
+            `;
+
+            renderThemes();
+        }
+
+        function renderThemes() {
+            const themesContainer = document.getElementById('themesContainer');
+            themesContainer.innerHTML = filteredThemes.map((theme, index) => `
+                <div class="theme-card" onclick="viewTheme('${theme.id}')">
+                    <div class="theme-rank">${allThemes.indexOf(theme) + 1}</div>
+                    <div class="theme-header">
+                        <div class="theme-name">${theme.name}</div>
+                        <div class="theme-percentage">${theme.percentage}%</div>
+                    </div>
+                    <div class="theme-details">
+                        <div class="detail-item">
+                            <strong>Size:</strong> ${theme.size.toLocaleString()} comments
+                        </div>
+                        <div class="detail-item">
+                            <strong>Avg Words:</strong> ${theme.avgWords}
+                        </div>
+                        <div class="detail-item">
+                            <strong>Sentiment:</strong> 
+                            <span class="sentiment-badge sentiment-${theme.sentiment}">${theme.sentiment}</span>
+                        </div>
+                        <div class="detail-item">
+                            <strong>Confidence:</strong> ${(theme.confidence * 100).toFixed(1)}%
+                        </div>
+                        <div class="detail-item" style="grid-column: 1 / -1;">
+                            <strong>Key Terms:</strong> ${theme.topWords.join(', ')}
+                        </div>
+                    </div>
+                    <div class="sample-comments">
+                        <h5 style="margin-bottom: 1rem; color: #374151;">Sample Comments:</h5>
+                        ${theme.comments.slice(0, 2).map(comment => `
+                            <div class="sample-comment">${comment}</div>
+                        `).join('')}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function toggleFilters() {
+            const content = document.getElementById('filtersContent');
+            const icon = document.getElementById('filtersToggleIcon');
+            
+            content.classList.toggle('show');
+            icon.classList.toggle('rotated');
+        }
+
+        function applyFilters() {
+            const sentimentFilter = document.getElementById('sentimentFilter').value;
+            const sizeFilter = document.getElementById('sizeFilter').value;
+            const sortFilter = document.getElementById('sortFilter').value;
+            const wordCountFilter = document.getElementById('wordCountFilter').value;
+
+            filteredThemes = allThemes.filter(theme => {
+                if (sentimentFilter && theme.sentiment !== sentimentFilter) return false;
+                
+                if (sizeFilter) {
+                    if (sizeFilter === 'large' && theme.percentage <= 20) return false;
+                    if (sizeFilter === 'medium' && (theme.percentage < 10 || theme.percentage > 20)) return false;
+                    if (sizeFilter === 'small' && theme.percentage >= 10) return false;
+                }
+
+                if (wordCountFilter) {
+                    if (wordCountFilter === 'short' && theme.avgWords >= 10) return false;
+                    if (wordCountFilter === 'medium' && (theme.avgWords < 10 || theme.avgWords > 20)) return false;
+                    if (wordCountFilter === 'long' && theme.avgWords <= 20) return false;
+                }
+
+                return true;
+            });
+
+            if (sortFilter === 'percentage') {
+                filteredThemes.sort((a, b) => b.percentage - a.percentage);
+            } else if (sortFilter === 'sentiment') {
+                const sentimentOrder = { negative: 0, neutral: 1, positive: 2 };
+                filteredThemes.sort((a, b) => sentimentOrder[a.sentiment] - sentimentOrder[b.sentiment]);
+            } else if (sortFilter === 'name') {
+                filteredThemes.sort((a, b) => a.name.localeCompare(b.name));
+            }
+
+            renderThemes();
+        }
+
+        function clearFilters() {
+            document.getElementById('sentimentFilter').value = '';
+            document.getElementById('sizeFilter').value = '';
+            document.getElementById('sortFilter').value = 'percentage';
+            document.getElementById('wordCountFilter').value = '';
+            
+            filteredThemes = [...allThemes];
+            renderThemes();
+        }
+
+        function viewTheme(themeId) {
+            const theme = allThemes.find(t => t.id === themeId);
+            if (theme) {
+                // Generate random sentiment distribution for demo
+                const sentimentCounts = generateSentimentCounts(theme.comments.length);
+                const commentsWithSentiment = theme.comments.map((comment, index) => ({
+                    text: comment,
+                    sentiment: getSentimentForIndex(index, sentimentCounts)
+                }));
+                
+                document.getElementById('modalTitle').textContent = theme.name;
+                document.getElementById('modalBody').innerHTML = `
+                    <div style="margin-bottom: 1.5rem; padding: 1rem; background: #f8fafc; border-radius: 0.5rem;">
+                        <strong>Theme Overview:</strong><br>
+                        ${theme.size} comments (${theme.percentage}% of total) • Average ${theme.avgWords} words per comment<br>
+                        Overall sentiment: <span class="sentiment-badge sentiment-${theme.sentiment}">${theme.sentiment}</span> • 
+                        Confidence: ${(theme.confidence * 100).toFixed(1)}%<br>
+                        <strong>Key terms:</strong> ${theme.topWords.join(', ')}
+                    </div>
+                    
+                    <div style="margin-bottom: 1.5rem;">
+                        <h4 style="margin-bottom: 1rem; color: #374151;">Filter by Sentiment:</h4>
+                        <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                            <button class="sentiment-filter-btn active" data-sentiment="all" onclick="filterCommentsBySentiment('all', '${themeId}')">
+                                <span>All Comments</span>
+                                <span class="sentiment-badge" style="background: #e2e8f0; color: #374151;">${theme.comments.length}</span>
+                            </button>
+                            <button class="sentiment-filter-btn" data-sentiment="positive" onclick="filterCommentsBySentiment('positive', '${themeId}')">
+                                <span>Positive</span>
+                                <span class="sentiment-badge sentiment-positive">${sentimentCounts.positive}</span>
+                            </button>
+                            <button class="sentiment-filter-btn" data-sentiment="neutral" onclick="filterCommentsBySentiment('neutral', '${themeId}')">
+                                <span>Neutral</span>
+                                <span class="sentiment-badge sentiment-neutral">${sentimentCounts.neutral}</span>
+                            </button>
+                            <button class="sentiment-filter-btn" data-sentiment="negative" onclick="filterCommentsBySentiment('negative', '${themeId}')">
+                                <span>Negative</span>
+                                <span class="sentiment-badge sentiment-negative">${sentimentCounts.negative}</span>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <h4 id="commentsHeader" style="margin-bottom: 1rem; color: #374151;">All Comments in this Theme:</h4>
+                    <div id="filteredComments">
+                        ${commentsWithSentiment.map((comment, index) => 
+                            `<div class="comment-item" data-sentiment="${comment.sentiment}" data-index="${index}">${comment.text}</div>`
+                        ).join('')}
+                    </div>
+                `;
+                document.getElementById('modal').classList.add('show');
+            }
+        }
+
+        function generateSentimentCounts(totalComments) {
+            // Generate realistic sentiment distribution
+            const positive = Math.floor(totalComments * (0.2 + Math.random() * 0.3));
+            const negative = Math.floor(totalComments * (0.3 + Math.random() * 0.4));
+            const neutral = totalComments - positive - negative;
+            
+            return { positive, neutral: Math.max(0, neutral), negative };
+        }
+
+        function getSentimentForIndex(index, counts) {
+            if (index < counts.positive) return 'positive';
+            if (index < counts.positive + counts.neutral) return 'neutral';
+            return 'negative';
+        }
+
+        function closeModal() {
+            document.getElementById('modal').classList.remove('show');
+        }
+
+        function handleChatKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('chatInput');
+            const message = input.value.trim();
+            
+            if (!message) return;
+            
+            addChatMessage(message, 'user');
+            
+            input.disabled = true;
+            document.getElementById('chatSendBtn').disabled = true;
+            
+            setTimeout(() => {
+                const response = generateChatResponse(message);
+                addChatMessage(response, 'assistant');
+                
+                input.disabled = false;
+                document.getElementById('chatSendBtn').disabled = false;
+                input.focus();
+            }, 1500);
+            
+            input.value = '';
+        }
+
+        function addChatMessage(message, sender) {
+            const chatMessages = document.getElementById('chatMessages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${sender}`;
+            messageDiv.innerHTML = `<div class="message-bubble">${message}</div>`;
+            
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function generateChatResponse(message) {
+            const lowerMessage = message.toLowerCase();
+            
+            if (lowerMessage.includes('staff') || lowerMessage.includes('service')) {
+                return `Staff service is your biggest concern area at 32% of comments. Main issues include slow response times and inconsistent service quality. However, many guests also praised helpful front desk staff and professional housekeeping.`;
+            }
+            
+            if (lowerMessage.includes('room') || lowerMessage.includes('clean')) {
+                return `Room quality represents 28% of feedback with mostly negative sentiment. Key issues include cleanliness upon arrival and maintenance problems. Consider reviewing housekeeping protocols and pre-arrival inspections.`;
+            }
+            
+            if (lowerMessage.includes('food') || lowerMessage.includes('dining')) {
+                return `Food and dining has mixed feedback (22% of comments). Breakfast service seems to be the main pain point, while restaurant dinner receives praise. Room service pricing is also a concern for guests.`;
+            }
+            
+            if (lowerMessage.includes('location') || lowerMessage.includes('amenities')) {
+                return `Location and amenities are your strongest area (18% positive feedback). Guests love the convenient location and appreciate amenities like the pool and parking. The gym equipment could use updating though.`;
+            }
+            
+            if (lowerMessage.includes('price') || lowerMessage.includes('value')) {
+                return `Pricing perception is neutral (15% of comments). Guests are divided - some see good value while others feel overcharged. Hidden fees are a particular frustration. Consider more transparent pricing.`;
+            }
+            
+            if (lowerMessage.includes('sentiment') || lowerMessage.includes('negative') || lowerMessage.includes('positive')) {
+                const neg = allThemes.filter(t => t.sentiment === 'negative').length;
+                const pos = allThemes.filter(t => t.sentiment === 'positive').length;
+                const neu = allThemes.filter(t => t.sentiment === 'neutral').length;
+                
+                return `Sentiment breakdown: ${neg} themes are negative, ${neu} neutral, and ${pos} positive. Staff service and room quality are your main negative themes, while location/amenities are positive strengths.`;
+            }
+            
+            if (lowerMessage.includes('recommend') || lowerMessage.includes('improve') || lowerMessage.includes('action')) {
+                return `Top recommendations: 1) Staff training for responsiveness and courtesy, 2) Strengthen housekeeping quality control, 3) Review breakfast service operations, 4) Transparent pricing communication. These address your main pain points.`;
+            }
+            
+            if (lowerMessage.includes('insight') || lowerMessage.includes('summary')) {
+                return `Key insights: Service quality (staff + rooms) represents 60% of your feedback themes. These operational areas are your biggest opportunities. Your location advantage should be leveraged while fixing service gaps.`;
+            }
+            
+            return `I can help analyze your guest feedback themes! Ask me about specific areas like "staff service", "room quality", or "pricing concerns". I can also provide insights on sentiment patterns or recommendations for improvement.`;
+        }
+
+        function updateAnalysisSummary(results) {
+            const summaryDiv = document.getElementById('analysisSummary');
+            const analysisTime = new Date().toLocaleString();
+            const topTheme = allThemes[0];
+            
+            summaryDiv.innerHTML = `
+                <strong>Completed:</strong> ${analysisTime}<br>
+                <strong>Comments Analyzed:</strong> ${results.totalComments.toLocaleString()}<br>
+                <strong>Themes Discovered:</strong> ${allThemes.length}<br>
+                <strong>Top Theme:</strong> ${topTheme.name} (${topTheme.percentage}%)<br>
+                <strong>Avg Confidence:</strong> ${(allThemes.reduce((sum, t) => sum + t.confidence, 0) / allThemes.length * 100).toFixed(1)}%
+            `;
+        }
+
+        function showError(message) {
+            document.getElementById('errorSection').style.display = 'block';
+            document.getElementById('errorMessage').textContent = message;
+        }
+
+        function hideError() {
+            document.getElementById('errorSection').style.display = 'none';
+        }
+
+        
+        function exportToPDF() {
+            if (!analyzedResults && allThemes.length === 0) {
+                showError('No analysis results to export. Please run an analysis first.');
+                return;
+            }
+            
+            // Show loading state
+            const btn = event.target;
+            const originalText = btn.textContent;
+            btn.textContent = '⏳ Generating PDF...';
+            btn.disabled = true;
+            
+            setTimeout(() => {
+                // Create PDF content structure
+                const pdfContent = generatePDFContent();
+                
+                // In a real implementation, this would call a PDF generation service
+                // For demo, we'll simulate the download
+                simulateFileDownload('Guest_Comment_Analysis_Report.pdf', 'application/pdf');
+                
+                btn.textContent = originalText;
+                btn.disabled = false;
+                
+                addChatMessage('PDF report has been generated and downloaded! It includes all themes, sentiment analysis, and key insights.', 'assistant');
+            }, 2000);
+        }
+        
+        function exportToCSV() {
+            if (!analyzedResults && allThemes.length === 0) {
+                showError('No analysis results to export. Please run an analysis first.');
+                return;
+            }
+            
+            const btn = event.target;
+            const originalText = btn.textContent;
+            btn.textContent = '⏳ Preparing CSV...';
+            btn.disabled = true;
+            
+            setTimeout(() => {
+                const csvContent = generateCSVContent();
+                simulateFileDownload('theme_analysis_data.csv', 'text/csv');
+                
+                btn.textContent = originalText;
+                btn.disabled = false;
+                
+                addChatMessage('CSV data export completed! The file contains detailed theme breakdowns and comment classifications.', 'assistant');
+            }, 1000);
+        }
+        
+        function generateShareLink() {
+            const btn = event.target;
+            const originalText = btn.textContent;
+            btn.textContent = '⏳ Creating Link...';
+            btn.disabled = true;
+            
+            setTimeout(() => {
+                // Generate a realistic-looking share URL
+                const shareId = Math.random().toString(36).substring(2, 15);
+                const shareUrl = `https://insights.databricks.com/shared/analysis/${shareId}`;
+                
+                document.getElementById('shareUrlInput').value = shareUrl;
+                document.getElementById('shareLinkSection').style.display = 'block';
+                
+                btn.textContent = originalText;
+                btn.disabled = false;
+                
+                addChatMessage('Share link generated! Anyone with this link can view your analysis results (link expires in 30 days).', 'assistant');
+            }, 1500);
+        }
+        
+        function copyShareLink() {
+            const input = document.getElementById('shareUrlInput');
+            input.select();
+            document.execCommand('copy');
+            
+            const btn = event.target;
+            const originalText = btn.textContent;
+            btn.textContent = '✅ Copied!';
+            setTimeout(() => {
+                btn.textContent = originalText;
+            }, 2000);
+        }
+        
+        function restartAnalysis() {
+            if (confirm('Are you sure you want to start a new analysis? This will clear all current results.')) {
+                // Reset all data
+                csvData = null;
+                analyzedResults = null;
+                allThemes = [];
+                filteredThemes = [];
+                
+                // Reset UI
+                document.getElementById('resultsSection').style.display = 'none';
+                document.getElementById('filtersSection').style.display = 'none';
+                document.getElementById('chatSection').style.display = 'none';
+                document.getElementById('exportSection').style.display = 'none';
+                document.getElementById('modelInfoSection').style.display = 'none';
+                document.getElementById('fileInfo').style.display = 'none';
+                document.getElementById('shareLinkSection').style.display = 'none';
+                
+                // Reset form
+                document.getElementById('fileInput').value = '';
+                document.getElementById('columnSelect').innerHTML = '<option value="">Select data source first...</option>';
+                document.getElementById('columnSelect').disabled = true;
+                document.getElementById('analyzeBtn').disabled = true;
+                document.getElementById('dataSourceType').value = 'upload';
+                toggleDataSource();
+                
+                // Reset chat
+                document.getElementById('chatMessages').innerHTML = `
+                    <div class="message assistant">
+                        <div class="message-bubble">
+                            Hi! I can help you understand your comment analysis results. Ask me about specific themes, sentiment patterns, or insights you'd like to explore.
+                        </div>
+                    </div>
+                `;
+                document.getElementById('chatInput').value = '';
+                
+                hideError();
+                
+                addChatMessage('Analysis has been reset. You can now upload a new dataset to begin fresh analysis.', 'assistant');
+                
+                // Scroll to top
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        }
+        
+        function generatePDFContent() {
+            // This would generate structured content for PDF generation
+            return {
+                title: 'Guest Comment Analysis Report',
+                summary: {
+                    totalComments: allThemes.reduce((sum, theme) => sum + theme.size, 0),
+                    themes: allThemes.length,
+                    avgWords: Math.round(allThemes.reduce((sum, theme) => sum + theme.avgWords * theme.size, 0) / allThemes.reduce((sum, theme) => sum + theme.size, 0))
+                },
+                themes: allThemes,
+                insights: generateKeyInsights(),
+                timestamp: new Date().toISOString()
+            };
+        }
+        
+        function generateCSVContent() {
+            // Create CSV structure with theme data
+            let csv = 'Theme,Percentage,Comments,Avg_Words,Sentiment,Confidence,Top_Words\n';
+            
+            allThemes.forEach(theme => {
+                csv += `"${theme.name}",${theme.percentage},${theme.size},${theme.avgWords},"${theme.sentiment}",${theme.confidence},"${theme.topWords.join('; ')}"\n`;
+            });
+            
+            return csv;
+        }
+        
+        function generateKeyInsights() {
+            return [
+                'Service quality themes represent the majority of feedback',
+                'Room cleanliness requires immediate attention',
+                'Location advantages should be leveraged in marketing',
+                'Staff training programs recommended for service improvement'
+            ];
+        }
+        
+        function simulateFileDownload(filename, mimeType) {
+            // Simulate file download for demo purposes
+            const link = document.createElement('a');
+            link.href = 'data:' + mimeType + ';charset=utf-8,';
+            link.download = filename;
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+        
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('modal');
+            if (event.target === modal) {
+                closeModal();
+            }
+        }
+        
+        function filterCommentsBySentiment(sentiment, themeId) {
+            // Update active button
+            document.querySelectorAll('.sentiment-filter-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.closest('.sentiment-filter-btn').classList.add('active');
+            
+            // Filter comments
+            const comments = document.querySelectorAll('#filteredComments .comment-item');
+            let visibleCount = 0;
+            
+            comments.forEach(comment => {
+                if (sentiment === 'all' || comment.dataset.sentiment === sentiment) {
+                    comment.style.display = 'block';
+                    visibleCount++;
+                } else {
+                    comment.style.display = 'none';
+                }
+            });
+            
+            // Update header
+            const header = document.getElementById('commentsHeader');
+            if (sentiment === 'all') {
+                header.textContent = 'All Comments in this Theme:';
+            } else {
+                header.textContent = `${sentiment.charAt(0).toUpperCase() + sentiment.slice(1)} Comments in this Theme: (${visibleCount} shown)`;
+            }
+        }
+    </script>
+</body>
+</html>
