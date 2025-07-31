@@ -160,13 +160,18 @@ Respond in JSON format with an array of themes:
           console.log('Step 2: Classifying each comment into themes...');
           
           const commentClassifications = [];
-          // Adjust batch size based on dataset size to avoid token limits
-          const batchSize = estimatedTokens > 25000 ? 10 : estimatedTokens > 15000 ? 15 : 20;
+          // Larger batch sizes with longer delays to reduce total API calls
+          const batchSize = estimatedTokens > 25000 ? 25 : estimatedTokens > 15000 ? 30 : 40;
           
           for (let i = 0; i < comments.length; i += batchSize) {
             const batch = comments.slice(i, i + batchSize);
             const batchComments = batch.map((comment, index) => 
               `${i + index + 1}. ${comment}`).join('\n');
+
+            // Add delay to avoid rate limits (6 seconds between requests = 10 requests/minute max)
+            if (i > 0) {
+              await new Promise(resolve => setTimeout(resolve, 6000));
+            }
 
             const classificationPrompt = `Classify each of these comments into one of the identified themes. Each comment should be assigned to exactly one theme.
 
@@ -196,20 +201,63 @@ Respond in JSON format with an array of classifications:
                 messages: [{ role: "user", content: classificationPrompt }]
               });
 
-              const classificationData = JSON.parse(classificationResponse.content[0].text);
+              let classificationData;
+              try {
+                classificationData = JSON.parse(classificationResponse.content[0].text);
+              } catch (jsonError) {
+                console.warn(`JSON parsing failed for batch starting at ${i}:`, jsonError.message);
+                console.warn('Raw response:', classificationResponse.content[0].text);
+                // Create fallback classifications
+                classificationData = {
+                  classifications: batch.map((comment, batchIndex) => ({
+                    commentIndex: i + batchIndex + 1,
+                    themeName: identifiedThemes[0]?.name || 'Uncategorized',
+                    confidence: 0.5
+                  }))
+                };
+              }
+              
               commentClassifications.push(...classificationData.classifications);
               
               console.log(`Classified batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(comments.length/batchSize)}`);
             } catch (batchError) {
               console.warn(`Classification failed for batch starting at ${i}:`, batchError.message);
-              // Add fallback classifications for this batch
-              batch.forEach((comment, batchIndex) => {
-                commentClassifications.push({
-                  commentIndex: i + batchIndex + 1,
-                  themeName: identifiedThemes[0]?.name || 'Uncategorized',
-                  confidence: 0.5
+              
+              // Handle rate limit errors specifically
+              if (batchError.message.includes('429') || batchError.message.includes('rate_limit_error')) {
+                console.warn('Rate limit hit, waiting 60 seconds before continuing...');
+                await new Promise(resolve => setTimeout(resolve, 60000));
+                // Retry this batch once
+                try {
+                  const retryResponse = await anthropic.messages.create({
+                    model: "claude-3-haiku-20240307",
+                    max_tokens: 1500,
+                    temperature: 0.1,
+                    messages: [{ role: "user", content: classificationPrompt }]
+                  });
+                  const retryData = JSON.parse(retryResponse.content[0].text);
+                  commentClassifications.push(...retryData.classifications);
+                  console.log(`Retry successful for batch ${Math.floor(i/batchSize) + 1}`);
+                } catch (retryError) {
+                  console.warn('Retry also failed, using fallback classifications');
+                  batch.forEach((comment, batchIndex) => {
+                    commentClassifications.push({
+                      commentIndex: i + batchIndex + 1,
+                      themeName: identifiedThemes[0]?.name || 'Uncategorized',
+                      confidence: 0.5
+                    });
+                  });
+                }
+              } else {
+                // Add fallback classifications for this batch
+                batch.forEach((comment, batchIndex) => {
+                  commentClassifications.push({
+                    commentIndex: i + batchIndex + 1,
+                    themeName: identifiedThemes[0]?.name || 'Uncategorized',
+                    confidence: 0.5
+                  });
                 });
-              });
+              }
             }
           }
 
@@ -264,10 +312,16 @@ Respond in JSON format with an array of classifications:
               
               try {
                 // Use Claude for business-context sentiment analysis
-                const sentimentBatchSize = estimatedTokens > 25000 ? 8 : estimatedTokens > 15000 ? 12 : 15;
+                const sentimentBatchSize = estimatedTokens > 25000 ? 20 : estimatedTokens > 15000 ? 25 : 30;
                 
                 for (let i = 0; i < group.comments.length; i += sentimentBatchSize) {
                   const batch = group.comments.slice(i, i + sentimentBatchSize);
+                  
+                  // Add delay to avoid rate limits
+                  if (i > 0) {
+                    await new Promise(resolve => setTimeout(resolve, 6000));
+                  }
+                  
                   const sentimentPrompt = `Analyze the sentiment of these comments in a business context. Focus on the overall emotional tone and satisfaction level expressed.
 
 Comments:
@@ -299,7 +353,22 @@ Respond in JSON format:
                       messages: [{ role: "user", content: sentimentPrompt }]
                     });
 
-                    const sentimentData = JSON.parse(sentimentResponse.content[0].text);
+                    let sentimentData;
+                    try {
+                      sentimentData = JSON.parse(sentimentResponse.content[0].text);
+                    } catch (jsonError) {
+                      console.warn(`Sentiment JSON parsing failed for ${group.name}:`, jsonError.message);
+                      console.warn('Raw response:', sentimentResponse.content[0].text);
+                      // Create fallback sentiment data
+                      sentimentData = {
+                        sentiments: batch.map((comment, idx) => ({
+                          commentIndex: i + idx + 1,
+                          sentiment: 'neutral',
+                          reasoning: 'JSON parsing failed, defaulted to neutral'
+                        }))
+                      };
+                    }
+                    
                     sentimentData.sentiments.forEach(result => {
                       themeSentiments.push({
                         classification: result.sentiment,
@@ -309,14 +378,48 @@ Respond in JSON format:
                     });
                   } catch (sentimentError) {
                     console.warn(`Sentiment analysis failed for batch in ${group.name}:`, sentimentError.message);
-                    // Fallback: classify as neutral
-                    batch.forEach(() => {
-                      themeSentiments.push({
-                        classification: 'neutral',
-                        reasoning: 'fallback classification',
-                        confidence: 0.5
+                    
+                    // Handle rate limit errors specifically
+                    if (sentimentError.message.includes('429') || sentimentError.message.includes('rate_limit_error')) {
+                      console.warn('Rate limit hit on sentiment analysis, waiting 60 seconds...');
+                      await new Promise(resolve => setTimeout(resolve, 60000));
+                      // Retry this batch once
+                      try {
+                        const retryResponse = await anthropic.messages.create({
+                          model: "claude-3-haiku-20240307",
+                          max_tokens: 1000,
+                          temperature: 0.1,
+                          messages: [{ role: "user", content: sentimentPrompt }]
+                        });
+                        const retryData = JSON.parse(retryResponse.content[0].text);
+                        retryData.sentiments.forEach(result => {
+                          themeSentiments.push({
+                            classification: result.sentiment,
+                            reasoning: result.reasoning,
+                            confidence: 0.9
+                          });
+                        });
+                        console.log(`Sentiment retry successful for ${group.name}`);
+                      } catch (retryError) {
+                        console.warn('Sentiment retry also failed, using neutral fallback');
+                        batch.forEach(() => {
+                          themeSentiments.push({
+                            classification: 'neutral',
+                            reasoning: 'retry failed fallback',
+                            confidence: 0.5
+                          });
+                        });
+                      }
+                    } else {
+                      // Fallback: classify as neutral
+                      batch.forEach(() => {
+                        themeSentiments.push({
+                          classification: 'neutral',
+                          reasoning: 'fallback classification',
+                          confidence: 0.5
+                        });
                       });
-                    });
+                    }
                   }
                 }
               } catch (error) {
