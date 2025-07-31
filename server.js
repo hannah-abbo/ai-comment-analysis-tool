@@ -174,11 +174,19 @@ app.post('/api/analyze', upload.single('file'), async (req, res) => {
           
           // Calculate sentiment for this topic
           const topicSentiments = clusterComments.map(item => {
-            const score = sentiment(item.originalText);
-            return {
-              score: score.score,
-              comparative: score.comparative
-            };
+            try {
+              const score = sentiment(item.originalText);
+              return {
+                score: score?.score || 0,
+                comparative: score?.comparative || 0
+              };
+            } catch (error) {
+              console.warn('Sentiment analysis failed for comment:', item.originalText?.substring(0, 50));
+              return {
+                score: 0,
+                comparative: 0
+              };
+            }
           });
           
           const avgSentiment = topicSentiments.reduce((sum, s) => 
@@ -314,14 +322,24 @@ Respond in JSON format:
         
         // Overall sentiment analysis
         const sentimentAnalysis = comments.map(comment => {
-          const score = sentiment(comment);
-          return {
-            text: comment.substring(0, 100) + '...',
-            score: score.score,
-            comparative: Math.round(score.comparative * 100) / 100,
-            classification: score.comparative > 0.1 ? 'positive' : 
-              score.comparative < -0.1 ? 'negative' : 'neutral'
-          };
+          try {
+            const score = sentiment(comment);
+            return {
+              text: comment.substring(0, 100) + '...',
+              score: score?.score || 0,
+              comparative: Math.round((score?.comparative || 0) * 100) / 100,
+              classification: (score?.comparative || 0) > 0.1 ? 'positive' : 
+                (score?.comparative || 0) < -0.1 ? 'negative' : 'neutral'
+            };
+          } catch (error) {
+            console.warn('Sentiment analysis failed for comment:', comment?.substring(0, 50));
+            return {
+              text: comment.substring(0, 100) + '...',
+              score: 0,
+              comparative: 0,
+              classification: 'neutral'
+            };
+          }
         });
         
         const avgWordCount = Math.round(processedComments.reduce((sum, item) => 
