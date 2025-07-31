@@ -72,6 +72,21 @@ app.post('/api/analyze', upload.single('file'), async (req, res) => {
         
         console.log(`Extracted ${comments.length} valid comments from ${results.length} rows`);
         
+        // Token estimation and warnings
+        const avgTokensPerComment = 20; // Conservative estimate
+        const estimatedTokens = comments.length * avgTokensPerComment;
+        const maxTokensPerRequest = 8000; // Claude Haiku limit
+        
+        console.log(`Estimated tokens needed: ${estimatedTokens}`);
+        
+        if (estimatedTokens > 50000) {
+          throw new Error(`Dataset too large: ${comments.length} comments (estimated ${estimatedTokens} tokens). Please reduce to under 2,000 comments to avoid API limits.`);
+        }
+        
+        if (estimatedTokens > 25000) {
+          console.warn(`Large dataset warning: ${comments.length} comments may take 2-3 minutes and consume significant API credits.`);
+        }
+        
         // Enhanced text processing
         const processedComments = comments.map((comment, index) => {
           // Use simple regex tokenization instead of Natural.js
@@ -102,8 +117,9 @@ app.post('/api/analyze', upload.single('file'), async (req, res) => {
           // Step 1: Have Claude identify themes from ALL comments
           console.log('Step 1: Having Claude identify themes from all comments...');
           
-          // Sample comments for theme identification (use first 50 for efficiency)
-          const sampleComments = comments.slice(0, Math.min(50, comments.length));
+          // Sample comments for theme identification (limit based on token estimate)
+          const maxSampleSize = estimatedTokens > 25000 ? 30 : 50;
+          const sampleComments = comments.slice(0, Math.min(maxSampleSize, comments.length));
           const commentsSample = sampleComments.map((comment, index) => 
             `${index + 1}. ${comment}`).join('\n');
 
@@ -144,7 +160,8 @@ Respond in JSON format with an array of themes:
           console.log('Step 2: Classifying each comment into themes...');
           
           const commentClassifications = [];
-          const batchSize = 20; // Process comments in batches
+          // Adjust batch size based on dataset size to avoid token limits
+          const batchSize = estimatedTokens > 25000 ? 10 : estimatedTokens > 15000 ? 15 : 20;
           
           for (let i = 0; i < comments.length; i += batchSize) {
             const batch = comments.slice(i, i + batchSize);
@@ -247,7 +264,7 @@ Respond in JSON format with an array of classifications:
               
               try {
                 // Use Claude for business-context sentiment analysis
-                const sentimentBatchSize = 15; // Larger batches for efficiency
+                const sentimentBatchSize = estimatedTokens > 25000 ? 8 : estimatedTokens > 15000 ? 12 : 15;
                 
                 for (let i = 0; i < group.comments.length; i += sentimentBatchSize) {
                   const batch = group.comments.slice(i, i + sentimentBatchSize);
@@ -536,7 +553,12 @@ Answer the user's question based solely on this analysis data:`;
 });
 
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', timestamp: new Date().toISOString() });
+  res.json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development',
+    anthropicConfigured: !!anthropic
+  });
 });
 
 

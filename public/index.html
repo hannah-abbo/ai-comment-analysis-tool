@@ -1152,6 +1152,15 @@
                 showError('Please upload a CSV file.');
                 return;
             }
+            
+            // Warn about large files
+            const fileSizeMB = file.size / (1024 * 1024);
+            if (fileSizeMB > 5) {
+                const confirmed = confirm(`Large file detected: ${fileSizeMB.toFixed(1)}MB. Files over 5MB may cause token limit errors. Continue?`);
+                if (!confirmed) {
+                    return;
+                }
+            }
 
             const reader = new FileReader();
             reader.onload = function(e) {
@@ -1250,6 +1259,14 @@
             console.log('sourceType:', sourceType);
             console.log('csvData exists:', !!csvData);
             
+            // Check dataset size and warn user
+            if (csvData && csvData.length > 2000) {
+                const confirmed = confirm(`Large dataset detected: ${csvData.length} rows. This may take 3-5 minutes and consume significant API credits. Continue?`);
+                if (!confirmed) {
+                    return;
+                }
+            }
+            
             if (!selectedColumn) {
                 console.log('Analysis blocked: no column selected');
                 showError('Please select a comment column first.');
@@ -1347,7 +1364,17 @@
             .catch(error => {
                 console.error('API Analysis Failed:', error);
                 document.getElementById('loadingSection').style.display = 'none';
-                showError(`Analysis failed: ${error.message}. Please check that the server is running and your file is properly formatted.`);
+                
+                let errorMessage = error.message;
+                if (errorMessage.includes('502') || errorMessage.includes('Bad Gateway')) {
+                    errorMessage = 'Server unavailable (502 Error). This usually means the CodeSandbox VM needs to be restarted. Try refreshing the page or restarting the sandbox.';
+                } else if (errorMessage.includes('token') || errorMessage.includes('limit')) {
+                    errorMessage = 'API token limit exceeded. Please try with a smaller dataset (under 1,000 comments) or contact support.';
+                } else if (errorMessage.includes('Network')) {
+                    errorMessage = 'Network connection failed. Please check your internet connection and try again.';
+                }
+                
+                showError(`Analysis failed: ${errorMessage}`);
             });
         }
 
