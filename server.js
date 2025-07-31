@@ -238,9 +238,9 @@ Respond in JSON format with an array of classifications:
           });
 
           // Build final topic analysis with accurate counts and percentages
-          finalTopics = Object.values(themeGroups)
-            .filter(group => group.comments.length > 0)
-            .map((group, index) => {
+          const themeGroupsArray = Object.values(themeGroups).filter(group => group.comments.length > 0);
+          
+          finalTopics = await Promise.all(themeGroupsArray.map(async (group, index) => {
               // Calculate sentiment for this theme using Claude for accuracy
               console.log(`Analyzing sentiment for theme: ${group.name}`);
               const themeSentiments = [];
@@ -367,7 +367,7 @@ Respond in JSON format:
                 comments: group.comments, // ALL comments, not samples
                 enhancedByAI: true
               };
-            });
+            }));
 
           console.log('LLM-first theme classification completed');
           
