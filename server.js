@@ -117,6 +117,12 @@ app.post('/api/analyze', upload.single('file'), async (req, res) => {
           // Step 1: Have Claude identify themes from ALL comments
           console.log('Step 1: Having Claude identify themes from all comments...');
           
+          // Check if Anthropic API is configured
+          if (!anthropic) {
+            console.warn('ANTHROPIC_API_KEY not set, using fallback theme identification');
+            throw new Error('Anthropic API not configured - using fallback themes');
+          }
+          
           // Sample comments for theme identification (limit based on token estimate)
           const maxSampleSize = estimatedTokens > 25000 ? 30 : 50;
           const sampleComments = comments.slice(0, Math.min(maxSampleSize, comments.length));
@@ -405,7 +411,142 @@ Respond in JSON format with an array of classifications:
           
         } catch (error) {
           console.error('LLM theme classification failed:', error.message);
-          throw new Error(`Theme classification failed: ${error.message}`);
+          console.log('Using fallback keyword-based theme identification...');
+          
+          // Fallback: Use keyword-based theme identification
+          const fallbackThemes = [
+            { name: 'Value and Pricing', keywords: ['value', 'price', 'cost', 'expensive', 'cheap', 'worth', 'money', 'budget'] },
+            { name: 'Service Quality', keywords: ['service', 'staff', 'help', 'friendly', 'rude', 'professional', 'assistance'] },
+            { name: 'Amenities and Features', keywords: ['pool', 'gym', 'spa', 'restaurant', 'room', 'facility', 'amenity', 'activity'] },
+            { name: 'Experience and Satisfaction', keywords: ['experience', 'enjoy', 'satisfied', 'disappointed', 'amazing', 'terrible', 'love', 'hate'] },
+            { name: 'General Feedback', keywords: ['overall', 'general', 'think', 'feel', 'opinion', 'recommend', 'suggest'] }
+          ];
+          
+          // Classify comments into fallback themes using keyword matching
+          const themeGroups = {};
+          fallbackThemes.forEach(theme => {
+            themeGroups[theme.name] = {
+              name: theme.name,
+              description: `Comments related to ${theme.name.toLowerCase()}`,
+              keywords: theme.keywords,
+              comments: [],
+              commentIndices: []
+            };
+          });
+          
+          // Add uncategorized theme
+          themeGroups['Other'] = {
+            name: 'Other',
+            description: 'Comments that do not fit into specific categories',
+            keywords: [],
+            comments: [],
+            commentIndices: []
+          };
+          
+          // Classify each comment based on keyword matching
+          comments.forEach((comment, index) => {
+            const lowerComment = comment.toLowerCase();
+            let bestMatch = 'Other';
+            let maxMatches = 0;
+            
+            fallbackThemes.forEach(theme => {
+              const matches = theme.keywords.filter(keyword => 
+                lowerComment.includes(keyword.toLowerCase())).length;
+              if (matches > maxMatches) {
+                maxMatches = matches;
+                bestMatch = theme.name;
+              }
+            });
+            
+            themeGroups[bestMatch].comments.push({
+              text: comment,
+              originalIndex: index,
+              confidence: maxMatches > 0 ? 0.7 : 0.3
+            });
+            themeGroups[bestMatch].commentIndices.push(index);
+          });
+          
+          // Build final topics from fallback themes
+          const themeGroupsArray = Object.values(themeGroups).filter(group => group.comments.length > 0);
+          
+          finalTopics = themeGroupsArray.map((group, index) => {
+            // Local sentiment analysis for this theme
+            let themeSentiments = [];
+            
+            group.comments.forEach(comment => {
+              const score = sentiment(comment.text);
+              let classification = 'neutral';
+              
+              // Business context rules
+              const text = comment.text.toLowerCase();
+              if (text.includes('expensive') || text.includes('costly') || text.includes('overpriced') || 
+                  text.includes('disappointed') || text.includes('terrible') || text.includes('awful') ||
+                  text.includes('bad') || text.includes('worst') || text.includes('hate')) {
+                classification = 'negative';
+              } else if (text.includes('great') || text.includes('excellent') || text.includes('amazing') ||
+                         text.includes('love') || text.includes('perfect') || text.includes('wonderful') ||
+                         text.includes('best') || text.includes('fantastic')) {
+                classification = 'positive';
+              } else if (score.comparative > 0.1) {
+                classification = 'positive';
+              } else if (score.comparative < -0.1) {
+                classification = 'negative';
+              }
+              
+              themeSentiments.push({
+                classification: classification,
+                reasoning: `Fallback analysis: score ${score.comparative}`,
+                confidence: 0.7
+              });
+            });
+            
+            // Calculate sentiment distribution
+            const sentimentCounts = {
+              positive: themeSentiments.filter(s => s.classification === 'positive').length,
+              negative: themeSentiments.filter(s => s.classification === 'negative').length,
+              neutral: themeSentiments.filter(s => s.classification === 'neutral').length
+            };
+            
+            const volume = group.comments.length;
+            const percentage = Math.round((volume / comments.length) * 100);
+            
+            // Overall theme sentiment based on majority
+            const sentimentClassification = sentimentCounts.positive > sentimentCounts.negative && sentimentCounts.positive > sentimentCounts.neutral ? 'positive' :
+              sentimentCounts.negative > sentimentCounts.positive && sentimentCounts.negative > sentimentCounts.neutral ? 'negative' : 'neutral';
+            
+            // Calculate average sentiment score for compatibility
+            const avgSentiment = sentimentCounts.positive > 0 ? 0.3 : sentimentCounts.negative > 0 ? -0.3 : 0;
+            
+            return {
+              topicId: index + 1,
+              title: group.name,
+              llmDescription: group.description,
+              words: group.keywords.map(keyword => ({ term: keyword, weight: 1, probability: 1 })),
+              volume: volume,
+              percentage: percentage,
+              sentiment: {
+                classification: sentimentClassification,
+                score: Math.round(avgSentiment * 100) / 100,
+                distribution: {
+                  positive: sentimentCounts.positive,
+                  negative: sentimentCounts.negative,
+                  neutral: sentimentCounts.neutral,
+                  positivePercentage: Math.round((sentimentCounts.positive / volume) * 100),
+                  negativePercentage: Math.round((sentimentCounts.negative / volume) * 100),
+                  neutralPercentage: Math.round((sentimentCounts.neutral / volume) * 100)
+                }
+              },
+              confidence: Math.round(group.comments.reduce((sum, c) => sum + c.confidence, 0) / group.comments.length * 100),
+              avgWordCount: Math.round(group.comments.reduce((sum, c) => 
+                sum + c.text.split(/\s+/).length, 0) / group.comments.length),
+              businessImpact: sentimentClassification === 'negative' && percentage > 10 ? 'high' : 
+                percentage > 15 ? 'medium' : 'low',
+              comments: group.comments, // ALL comments, not samples
+              enhancedByAI: false // Fallback mode
+            };
+          });
+          
+          console.log(`Fallback theme classification completed with ${finalTopics.length} themes`);
         }
         
         // Keep ALL comments in the response for full display
