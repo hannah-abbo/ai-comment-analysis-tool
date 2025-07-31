@@ -74,7 +74,8 @@ app.post('/api/analyze', upload.single('file'), async (req, res) => {
         
         // Enhanced text processing
         const processedComments = comments.map((comment, index) => {
-          const tokens = natural.WordTokenizer.tokenize(comment);
+          // Use simple regex tokenization instead of Natural.js
+          const tokens = comment.match(/\b[a-zA-Z]{3,}\b/g) || [];
           const filtered = stopword.removeStopwords(tokens)
             .filter(word => word.length > 2 && /^[a-zA-Z]+$/.test(word));
           return {
