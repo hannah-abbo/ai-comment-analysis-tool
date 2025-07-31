@@ -89,228 +89,220 @@ app.post('/api/analyze', upload.single('file'), async (req, res) => {
         
         console.log(`Processed ${processedComments.length} comments with sufficient tokens`);
         
-        // LDA Topic Modeling with TF-IDF
-        const tfidf = new natural.TfIdf();
-        processedComments.forEach(item => {
-          tfidf.addDocument(item.processedText);
-        });
-        
-        // Simple topic discovery using TF-IDF term clustering
-        const numTopics = Math.min(8, Math.max(1, Math.floor(processedComments.length / 5)));
-        console.log(`Creating ${numTopics} topics from ${processedComments.length} processed comments`);
-        
         if (processedComments.length < 1) {
           throw new Error(`Not enough valid comments to analyze. Found ${processedComments.length} processable comments, need at least 1.`);
         }
         
-        const topicTerms = [];
+        // LLM-First Theme Classification Approach
+        console.log('Starting LLM-first theme classification...');
+        let finalTopics = [];
+        let coherenceScore = 0.8; // Default for LLM-based classification
         
-        // Get most important terms per document
-        const documentTerms = processedComments.map((item, docIndex) => {
-          return tfidf.listTerms(docIndex).slice(0, 10); // Top 10 terms per document
-        });
-        
-        // Group documents by similar terms (simple topic modeling)
-        const topics = [];
-        for (let i = 0; i < numTopics; i++) {
-          topics.push({
-            id: i,
-            documents: [],
-            terms: {},
-            termCounts: {}
-          });
-        }
-        
-        // Assign documents to topics based on term similarity
-        processedComments.forEach((item, docIndex) => {
-          const topicId = docIndex % numTopics; // Simple round-robin assignment for now
-          topics[topicId].documents.push({
-            ...item,
-            docIndex
-          });
+        try {
+          // Step 1: Have Claude identify themes from ALL comments
+          console.log('Step 1: Having Claude identify themes from all comments...');
           
-          // Aggregate terms for this topic
-          documentTerms[docIndex].forEach(termData => {
-            if (!topics[topicId].terms[termData.term]) {
-              topics[topicId].terms[termData.term] = 0;
-              topics[topicId].termCounts[termData.term] = 0;
-            }
-            topics[topicId].terms[termData.term] += termData.tfidf;
-            topics[topicId].termCounts[termData.term] += 1;
-          });
-        });
-        
-        // Calculate coherence score based on topic term consistency
-        const coherenceScore = topics.reduce((sum, topic) => {
-          const termValues = Object.values(topic.terms);
-          if (termValues.length === 0) return sum;
-          const variance = termValues.reduce((s, v, i, arr) => 
-            s + Math.pow(v - arr.reduce((a, b) => a + b) / arr.length, 2), 0) / termValues.length;
-          return sum + (1 / (1 + variance)); // Higher consistency = lower variance
-        }, 0) / topics.length;
-        
-        // Build topic analysis with enhanced metrics
-        console.log('Building topic analysis...');
-        const topicAnalysis = [];
-        topics.forEach((topic, clusterId) => {
-          const clusterComments = topic.documents;
-          
-          if (clusterComments.length === 0) {
-            console.log(`Skipping empty topic ${clusterId}`);
-            return;
-          }
-          
-          console.log(`Processing topic ${clusterId} with ${clusterComments.length} comments`);
-          
-          // Get top terms for this topic
-          const topTerms = Object.entries(topic.terms)
-            .map(([term, weight]) => ({
-              term,
-              weight,
-              probability: Math.round(weight * 1000) / 1000
-            }))
-            .sort((a, b) => b.weight - a.weight)
-            .slice(0, 10);
-          
-          // Calculate sentiment for this topic
-          const topicSentiments = clusterComments.map(item => {
-            try {
-              const score = sentiment(item.originalText);
-              return {
-                score: score?.score || 0,
-                comparative: score?.comparative || 0
-              };
-            } catch (error) {
-              console.warn('Sentiment analysis failed for comment:', item.originalText?.substring(0, 50));
-              return {
-                score: 0,
-                comparative: 0
-              };
-            }
-          });
-          
-          const avgSentiment = topicSentiments.reduce((sum, s) => 
-            sum + s.comparative, 0) / topicSentiments.length;
-          
-          const sentimentClassification = avgSentiment > 0.1 ? 'positive' : 
-            avgSentiment < -0.1 ? 'negative' : 'neutral';
-          
-          // Calculate confidence based on cluster density
-          const clusterSize = clusterComments.length;
-          const totalComments = processedComments.length;
-          const confidence = Math.min(100, Math.max(70, 
-            70 + (clusterSize / totalComments) * 30 + coherenceScore * 20
-          ));
-          
-          // Sample representative quotes
-          const sampleQuotes = _.sampleSize(clusterComments, Math.min(3, clusterComments.length))
-            .map(item => item.originalText.substring(0, 150) + '...');
-          
-          topicAnalysis.push({
-            topicId: clusterId + 1,
-            title: `Theme ${clusterId + 1}: ${topTerms[0]?.term || 'Unknown'}`,
-            words: topTerms,
-            volume: clusterComments.length,
-            percentage: Math.round((clusterComments.length / totalComments) * 100),
-            sentiment: {
-              classification: sentimentClassification,
-              score: Math.round(avgSentiment * 100) / 100,
-              distribution: {
-                positive: topicSentiments.filter(s => s.comparative > 0.1).length,
-                negative: topicSentiments.filter(s => s.comparative < -0.1).length,
-                neutral: topicSentiments.filter(s => 
-                  s.comparative >= -0.1 && s.comparative <= 0.1).length
-              }
-            },
-            confidence: Math.round(confidence),
-            avgWordCount: Math.round(clusterComments.reduce((sum, item) => 
-              sum + item.wordCount, 0) / clusterComments.length),
-            sampleQuotes,
-            businessImpact: sentimentClassification === 'negative' && 
-              clusterComments.length > totalComments * 0.1 ? 'high' : 
-              clusterComments.length > totalComments * 0.15 ? 'medium' : 'low',
-            comments: clusterComments // Store for LLM processing
-          });
-        });
-        
-        console.log(`Generated ${topicAnalysis.length} topics for analysis`);
-        
-        // GenAI Theme Classification using Claude
-        let finalTopics = topicAnalysis;
-        if (anthropic && topicAnalysis.length > 0) {
-          console.log('Starting Claude AI enhancement...');
-          try {
-            const enhancedTopics = await Promise.all(topicAnalysis.map(async (topic) => {
-              const topWords = topic.words.slice(0, 5).map(w => w.term).join(', ');
-              const sampleComments = topic.comments.slice(0, 5).map(c => c.originalText).join('\n\n');
-              
-              const prompt = `Analyze this group of customer feedback comments and provide a clear, business-focused theme name.
+          // Sample comments for theme identification (use first 50 for efficiency)
+          const sampleComments = comments.slice(0, Math.min(50, comments.length));
+          const commentsSample = sampleComments.map((comment, index) => 
+            `${index + 1}. ${comment}`).join('\n');
 
-Top keywords: ${topWords}
+          const themeIdentificationPrompt = `Analyze these customer comments about cruise booking decisions and identify 3-8 distinct themes/categories.
 
-Sample comments:
-${sampleComments}
+Comments:
+${commentsSample}
 
-Based on the above comments and keywords, provide:
-1. A clear, specific theme name (2-4 words, business-focused)
-2. A brief description of what this theme represents
-3. The main customer concern or topic
+Based on these comments, identify the main themes customers mention. For each theme, provide:
+1. Theme name (2-4 words, business-focused)
+2. Brief description
+3. Key indicators/words that signal this theme
 
-Respond in JSON format:
+Respond in JSON format with an array of themes:
 {
-  "themeName": "Theme Name",
-  "description": "Brief description",
-  "mainConcern": "Primary customer concern"
+  "themes": [
+    {
+      "name": "Theme Name",
+      "description": "What this theme represents",
+      "keywords": ["keyword1", "keyword2", "keyword3"]
+    }
+  ]
 }`;
+
+          const themeResponse = await anthropic.messages.create({
+            model: "claude-3-haiku-20240307",
+            max_tokens: 1000,
+            temperature: 0.3,
+            messages: [{ role: "user", content: themeIdentificationPrompt }]
+          });
+
+          const themeData = JSON.parse(themeResponse.content[0].text);
+          const identifiedThemes = themeData.themes;
+          
+          console.log(`Identified ${identifiedThemes.themes?.length || identifiedThemes.length} themes:`, identifiedThemes.map(t => t.name));
+
+          // Step 2: Classify each comment into identified themes
+          console.log('Step 2: Classifying each comment into themes...');
+          
+          const commentClassifications = [];
+          const batchSize = 20; // Process comments in batches
+          
+          for (let i = 0; i < comments.length; i += batchSize) {
+            const batch = comments.slice(i, i + batchSize);
+            const batchComments = batch.map((comment, index) => 
+              `${i + index + 1}. ${comment}`).join('\n');
+
+            const classificationPrompt = `Classify each of these comments into one of the identified themes. Each comment should be assigned to exactly one theme.
+
+Available themes:
+${identifiedThemes.map((theme, idx) => 
+  `${idx + 1}. ${theme.name}: ${theme.description}`).join('\n')}
+
+Comments to classify:
+${batchComments}
+
+Respond in JSON format with an array of classifications:
+{
+  "classifications": [
+    {
+      "commentIndex": 1,
+      "themeName": "Exact theme name from above",
+      "confidence": 0.9
+    }
+  ]
+}`;
+
+            try {
+              const classificationResponse = await anthropic.messages.create({
+                model: "claude-3-haiku-20240307",
+                max_tokens: 1500,
+                temperature: 0.1,
+                messages: [{ role: "user", content: classificationPrompt }]
+              });
+
+              const classificationData = JSON.parse(classificationResponse.content[0].text);
+              commentClassifications.push(...classificationData.classifications);
               
-              try {
-                const response = await anthropic.messages.create({
-                  model: "claude-3-haiku-20240307",
-                  max_tokens: 200,
-                  temperature: 0.3,
-                  messages: [{ role: "user", content: prompt }]
+              console.log(`Classified batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(comments.length/batchSize)}`);
+            } catch (batchError) {
+              console.warn(`Classification failed for batch starting at ${i}:`, batchError.message);
+              // Add fallback classifications for this batch
+              batch.forEach((comment, batchIndex) => {
+                commentClassifications.push({
+                  commentIndex: i + batchIndex + 1,
+                  themeName: identifiedThemes[0]?.name || 'Uncategorized',
+                  confidence: 0.5
                 });
-                
-                const llmResponse = JSON.parse(response.content[0].text);
-                
-                // Tag each comment in this group with the theme
-                const taggedComments = topic.comments.map(comment => ({
-                  ...comment,
-                  assignedTheme: llmResponse.themeName,
-                  themeDescription: llmResponse.description
-                }));
-                
-                return {
-                  ...topic,
-                  title: llmResponse.themeName,
-                  llmDescription: llmResponse.description,
-                  mainConcern: llmResponse.mainConcern,
-                  comments: taggedComments,
-                  enhancedByAI: true
-                };
-              } catch (llmError) {
-                console.warn(`LLM processing failed for topic ${topic.topicId}:`, llmError.message);
-                return {
-                  ...topic,
-                  enhancedByAI: false
-                };
-              }
-            }));
-            
-            // Update with LLM-enhanced results
-            finalTopics = enhancedTopics;
-            console.log('Claude AI enhancement completed');
-          } catch (error) {
-            console.warn('LLM enhancement failed:', error.message);
+              });
+            }
           }
-        } else {
-          console.log('Skipping Claude AI enhancement - no API key or no topics');
+
+          console.log(`Classified ${commentClassifications.length} comments into themes`);
+
+          // Step 3: Group comments by theme and calculate accurate percentages
+          console.log('Step 3: Grouping comments and calculating percentages...');
+          
+          const themeGroups = {};
+          identifiedThemes.forEach(theme => {
+            themeGroups[theme.name] = {
+              name: theme.name,
+              description: theme.description,
+              keywords: theme.keywords,
+              comments: [],
+              commentIndices: []
+            };
+          });
+
+          // Add uncategorized theme
+          themeGroups['Uncategorized'] = {
+            name: 'Uncategorized',
+            description: 'Comments that could not be clearly categorized',
+            keywords: [],
+            comments: [],
+            commentIndices: []
+          };
+
+          // Group comments by their assigned themes
+          commentClassifications.forEach(classification => {
+            const commentIndex = classification.commentIndex - 1; // Convert to 0-based
+            const comment = comments[commentIndex];
+            const themeName = classification.themeName || 'Uncategorized';
+            
+            if (themeGroups[themeName]) {
+              themeGroups[themeName].comments.push({
+                text: comment,
+                originalIndex: commentIndex,
+                confidence: classification.confidence || 0.5
+              });
+              themeGroups[themeName].commentIndices.push(commentIndex);
+            }
+          });
+
+          // Build final topic analysis with accurate counts and percentages
+          finalTopics = Object.values(themeGroups)
+            .filter(group => group.comments.length > 0)
+            .map((group, index) => {
+              // Calculate sentiment for this theme
+              const themeSentiments = group.comments.map(comment => {
+                try {
+                  const score = sentiment(comment.text);
+                  return {
+                    score: score?.score || 0,
+                    comparative: score?.comparative || 0
+                  };
+                } catch (error) {
+                  return { score: 0, comparative: 0 };
+                }
+              });
+
+              const avgSentiment = themeSentiments.reduce((sum, s) => 
+                sum + s.comparative, 0) / themeSentiments.length;
+              
+              const sentimentClassification = avgSentiment > 0.1 ? 'positive' : 
+                avgSentiment < -0.1 ? 'negative' : 'neutral';
+
+              const volume = group.comments.length;
+              const percentage = Math.round((volume / comments.length) * 100);
+
+              return {
+                topicId: index + 1,
+                title: group.name,
+                llmDescription: group.description,
+                words: group.keywords.map(keyword => ({ term: keyword, weight: 1, probability: 1 })),
+                volume: volume,
+                percentage: percentage,
+                sentiment: {
+                  classification: sentimentClassification,
+                  score: Math.round(avgSentiment * 100) / 100,
+                  distribution: {
+                    positive: themeSentiments.filter(s => s.comparative > 0.1).length,
+                    negative: themeSentiments.filter(s => s.comparative < -0.1).length,
+                    neutral: themeSentiments.filter(s => 
+                      s.comparative >= -0.1 && s.comparative <= 0.1).length
+                  }
+                },
+                confidence: Math.round(group.comments.reduce((sum, c) => sum + c.confidence, 0) / group.comments.length * 100),
+                avgWordCount: Math.round(group.comments.reduce((sum, c) => 
+                  sum + c.text.split(/\s+/).length, 0) / group.comments.length),
+                businessImpact: sentimentClassification === 'negative' && percentage > 10 ? 'high' : 
+                  percentage > 15 ? 'medium' : 'low',
+                comments: group.comments, // ALL comments, not samples
+                enhancedByAI: true
+              };
+            });
+
+          console.log('LLM-first theme classification completed');
+          
+        } catch (error) {
+          console.error('LLM theme classification failed:', error.message);
+          throw new Error(`Theme classification failed: ${error.message}`);
         }
         
-        // Remove comments from response to reduce payload size
+        // Keep ALL comments in the response for full display
         const cleanTopics = finalTopics.map(topic => {
-          const { comments, ...topicWithoutComments } = topic;
-          return topicWithoutComments;
+          return {
+            ...topic,
+            sampleQuotes: topic.comments.map(c => c.text) // All comments as "sample quotes"
+          };
         });
         
         // Sort by business impact and volume
