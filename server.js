@@ -207,18 +207,34 @@ Respond in JSON format with an array of classifications:
             try {
               const classificationResponse = await anthropic.messages.create({
                 model: "claude-3-haiku-20240307",
-                max_tokens: 1500,
+                max_tokens: 3000, // Increased to prevent truncation
                 temperature: 0.1,
                 messages: [{ role: "user", content: classificationPrompt }]
               });
 
               let classificationData;
               try {
-                classificationData = JSON.parse(classificationResponse.content[0].text);
+                let responseText = classificationResponse.content[0].text;
+                
+                // Try to fix common JSON truncation issues
+                if (!responseText.endsWith('}')) {
+                  console.warn('Response appears truncated, attempting to fix...');
+                  // Find the last complete classification entry
+                  const lastCompleteEntry = responseText.lastIndexOf('},');
+                  if (lastCompleteEntry > 0) {
+                    responseText = responseText.substring(0, lastCompleteEntry + 1) + '\n  ]\n}';
+                  } else {
+                    throw new Error('Response too truncated to repair');
+                  }
+                }
+                
+                classificationData = JSON.parse(responseText);
               } catch (jsonError) {
                 console.warn(`JSON parsing failed for batch starting at ${i}:`, jsonError.message);
-                console.warn('Raw response:', classificationResponse.content[0].text);
-                // Create fallback classifications
+                console.warn('Raw response length:', classificationResponse.content[0].text.length);
+                console.warn('Raw response preview:', classificationResponse.content[0].text.substring(0, 200) + '...');
+                
+                // Create fallback classifications for this batch
                 classificationData = {
                   classifications: batch.map((comment, batchIndex) => ({
                     commentIndex: i + batchIndex + 1,
@@ -316,6 +332,11 @@ Respond in JSON format with an array of classifications:
           // Build final topic analysis with accurate counts and percentages
           const themeGroupsArray = Object.values(themeGroups).filter(group => group.comments.length > 0);
           
+          console.log('Theme groups before final processing:');
+          themeGroupsArray.forEach(group => {
+            console.log(`- ${group.name}: ${group.comments.length} comments`);
+          });
+          
           finalTopics = await Promise.all(themeGroupsArray.map(async (group, index) => {
               // SIMPLIFIED sentiment analysis - use local sentiment library instead of Claude
               console.log(`Analyzing sentiment for theme: ${group.name} using local analysis (avoiding API calls)`);
@@ -324,30 +345,39 @@ Respond in JSON format with an array of classifications:
               try {
                 // Use local sentiment analysis to avoid API rate limits entirely
                 group.comments.forEach(comment => {
-                  const score = sentiment(comment.text);
-                  let classification = 'neutral';
-                  
-                  // Business context rules
-                  const text = comment.text.toLowerCase();
-                  if (text.includes('expensive') || text.includes('costly') || text.includes('overpriced') || 
-                      text.includes('disappointed') || text.includes('terrible') || text.includes('awful') ||
-                      text.includes('bad') || text.includes('worst') || text.includes('hate')) {
-                    classification = 'negative';
-                  } else if (text.includes('great') || text.includes('excellent') || text.includes('amazing') ||
-                             text.includes('love') || text.includes('perfect') || text.includes('wonderful') ||
-                             text.includes('best') || text.includes('fantastic')) {
-                    classification = 'positive';
-                  } else if (score.comparative > 0.1) {
-                    classification = 'positive';
-                  } else if (score.comparative < -0.1) {
-                    classification = 'negative';
+                  try {
+                    const score = sentiment(comment.text || '');
+                    let classification = 'neutral';
+                    
+                    // Business context rules
+                    const text = (comment.text || '').toLowerCase();
+                    if (text.includes('expensive') || text.includes('costly') || text.includes('overpriced') || 
+                        text.includes('disappointed') || text.includes('terrible') || text.includes('awful') ||
+                        text.includes('bad') || text.includes('worst') || text.includes('hate')) {
+                      classification = 'negative';
+                    } else if (text.includes('great') || text.includes('excellent') || text.includes('amazing') ||
+                               text.includes('love') || text.includes('perfect') || text.includes('wonderful') ||
+                               text.includes('best') || text.includes('fantastic')) {
+                      classification = 'positive';
+                    } else if (score && score.comparative > 0.1) {
+                      classification = 'positive';
+                    } else if (score && score.comparative < -0.1) {
+                      classification = 'negative';
+                    }
+                    
+                    themeSentiments.push({
+                      classification: classification,
+                      reasoning: `Local analysis: score ${score ? score.comparative : 'N/A'}`,
+                      confidence: 0.8
+                    });
+                  } catch (sentimentError) {
+                    console.warn(`Sentiment analysis failed for comment in ${group.name}:`, sentimentError.message);
+                    themeSentiments.push({
+                      classification: 'neutral',
+                      reasoning: 'Error in sentiment analysis',
+                      confidence: 0.5
+                    });
                   }
-                  
-                  themeSentiments.push({
-                    classification: classification,
-                    reasoning: `Local analysis: score ${score.comparative}`,
-                    confidence: 0.8
-                  });
                 });
               } catch (error) {
                 console.warn(`Theme sentiment analysis failed for ${group.name}:`, error.message);
