@@ -241,24 +241,101 @@ Respond in JSON format with an array of classifications:
           finalTopics = Object.values(themeGroups)
             .filter(group => group.comments.length > 0)
             .map((group, index) => {
-              // Calculate sentiment for this theme
-              const themeSentiments = group.comments.map(comment => {
-                try {
-                  const score = sentiment(comment.text);
-                  return {
-                    score: score?.score || 0,
-                    comparative: score?.comparative || 0
-                  };
-                } catch (error) {
-                  return { score: 0, comparative: 0 };
+              // Calculate sentiment for this theme using Claude for accuracy
+              console.log(`Analyzing sentiment for theme: ${group.name}`);
+              const themeSentiments = [];
+              
+              try {
+                // Use Claude for more accurate sentiment analysis
+                const sentimentBatchSize = 10;
+                for (let i = 0; i < group.comments.length; i += sentimentBatchSize) {
+                  const batch = group.comments.slice(i, i + sentimentBatchSize);
+                  const sentimentPrompt = `Analyze the sentiment of these customer comments. For each comment, determine if it's positive, negative, or neutral.
+
+Comments:
+${batch.map((comment, idx) => `${i + idx + 1}. ${comment.text}`).join('\n')}
+
+Respond in JSON format:
+{
+  "sentiments": [
+    {
+      "commentIndex": 1,
+      "sentiment": "positive|negative|neutral",
+      "confidence": 0.9
+    }
+  ]
+}`;
+
+                  try {
+                    const sentimentResponse = await anthropic.messages.create({
+                      model: "claude-3-haiku-20240307",
+                      max_tokens: 800,
+                      temperature: 0.1,
+                      messages: [{ role: "user", content: sentimentPrompt }]
+                    });
+
+                    const sentimentData = JSON.parse(sentimentResponse.content[0].text);
+                    sentimentData.sentiments.forEach(result => {
+                      const comparative = result.sentiment === 'positive' ? 0.5 : 
+                                        result.sentiment === 'negative' ? -0.5 : 0;
+                      themeSentiments.push({
+                        score: comparative * 10,
+                        comparative: comparative,
+                        classification: result.sentiment,
+                        confidence: result.confidence
+                      });
+                    });
+                  } catch (sentimentError) {
+                    console.warn(`Sentiment analysis failed for batch in ${group.name}:`, sentimentError.message);
+                    // Fallback to basic sentiment
+                    batch.forEach(comment => {
+                      try {
+                        const score = sentiment(comment.text);
+                        const classification = (score?.comparative || 0) > 0.1 ? 'positive' : 
+                                             (score?.comparative || 0) < -0.1 ? 'negative' : 'neutral';
+                        themeSentiments.push({
+                          score: score?.score || 0,
+                          comparative: score?.comparative || 0,
+                          classification: classification,
+                          confidence: 0.7
+                        });
+                      } catch (error) {
+                        themeSentiments.push({
+                          score: 0,
+                          comparative: 0,
+                          classification: 'neutral',
+                          confidence: 0.5
+                        });
+                      }
+                    });
+                  }
                 }
-              });
+              } catch (error) {
+                console.warn(`Theme sentiment analysis failed for ${group.name}:`, error.message);
+                // Fallback for entire theme
+                group.comments.forEach(comment => {
+                  themeSentiments.push({
+                    score: 0,
+                    comparative: 0,
+                    classification: 'neutral',
+                    confidence: 0.5
+                  });
+                });
+              }
 
               const avgSentiment = themeSentiments.reduce((sum, s) => 
                 sum + s.comparative, 0) / themeSentiments.length;
               
-              const sentimentClassification = avgSentiment > 0.1 ? 'positive' : 
-                avgSentiment < -0.1 ? 'negative' : 'neutral';
+              // Use actual classifications from Claude instead of just averages
+              const sentimentCounts = {
+                positive: themeSentiments.filter(s => s.classification === 'positive').length,
+                negative: themeSentiments.filter(s => s.classification === 'negative').length,
+                neutral: themeSentiments.filter(s => s.classification === 'neutral').length
+              };
+              
+              // Overall theme sentiment based on majority
+              const sentimentClassification = sentimentCounts.positive > sentimentCounts.negative && sentimentCounts.positive > sentimentCounts.neutral ? 'positive' :
+                sentimentCounts.negative > sentimentCounts.positive && sentimentCounts.negative > sentimentCounts.neutral ? 'negative' : 'neutral';
 
               const volume = group.comments.length;
               const percentage = Math.round((volume / comments.length) * 100);
@@ -274,10 +351,12 @@ Respond in JSON format with an array of classifications:
                   classification: sentimentClassification,
                   score: Math.round(avgSentiment * 100) / 100,
                   distribution: {
-                    positive: themeSentiments.filter(s => s.comparative > 0.1).length,
-                    negative: themeSentiments.filter(s => s.comparative < -0.1).length,
-                    neutral: themeSentiments.filter(s => 
-                      s.comparative >= -0.1 && s.comparative <= 0.1).length
+                    positive: sentimentCounts.positive,
+                    negative: sentimentCounts.negative,
+                    neutral: sentimentCounts.neutral,
+                    positivePercentage: Math.round((sentimentCounts.positive / volume) * 100),
+                    negativePercentage: Math.round((sentimentCounts.negative / volume) * 100),
+                    neutralPercentage: Math.round((sentimentCounts.neutral / volume) * 100)
                   }
                 },
                 confidence: Math.round(group.comments.reduce((sum, c) => sum + c.confidence, 0) / group.comments.length * 100),

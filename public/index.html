@@ -1612,9 +1612,14 @@
                         <div class="detail-item">
                             <strong>Avg Words:</strong> ${theme.avgWords}
                         </div>
-                        <div class="detail-item">
-                            <strong>Sentiment:</strong> 
-                            <span class="sentiment-badge sentiment-${theme.sentiment}">${theme.sentiment}</span>
+                        <div class="detail-item" style="grid-column: 1 / -1;">
+                            <strong>Sentiment Breakdown:</strong> 
+                            <span class="sentiment-badge sentiment-${theme.sentiment}">Overall: ${theme.sentiment}</span>
+                            <div style="display: flex; gap: 1rem; margin-top: 0.5rem; font-size: 0.875rem;">
+                                <span style="color: #059669;">✓ Positive: ${theme.sentiment?.distribution?.positive || 0} (${theme.sentiment?.distribution?.positivePercentage || 0}%)</span>
+                                <span style="color: #dc2626;">✗ Negative: ${theme.sentiment?.distribution?.negative || 0} (${theme.sentiment?.distribution?.negativePercentage || 0}%)</span>
+                                <span style="color: #6b7280;">− Neutral: ${theme.sentiment?.distribution?.neutral || 0} (${theme.sentiment?.distribution?.neutralPercentage || 0}%)</span>
+                            </div>
                         </div>
                         <div class="detail-item">
                             <strong>Confidence:</strong> ${(theme.confidence * 100).toFixed(1)}%
@@ -1820,43 +1825,86 @@
         function generateChatResponse(message) {
             const lowerMessage = message.toLowerCase();
             
-            if (lowerMessage.includes('staff') || lowerMessage.includes('service')) {
-                return `Staff service is your biggest concern area at 32% of comments. Main issues include slow response times and inconsistent service quality. However, many guests also praised helpful front desk staff and professional housekeeping.`;
+            if (!allThemes || allThemes.length === 0) {
+                return "Please upload and analyze a CSV file first to chat about your data.";
             }
-            
-            if (lowerMessage.includes('room') || lowerMessage.includes('clean')) {
-                return `Room quality represents 28% of feedback with mostly negative sentiment. Key issues include cleanliness upon arrival and maintenance problems. Consider reviewing housekeeping protocols and pre-arrival inspections.`;
-            }
-            
-            if (lowerMessage.includes('food') || lowerMessage.includes('dining')) {
-                return `Food and dining has mixed feedback (22% of comments). Breakfast service seems to be the main pain point, while restaurant dinner receives praise. Room service pricing is also a concern for guests.`;
-            }
-            
-            if (lowerMessage.includes('location') || lowerMessage.includes('amenities')) {
-                return `Location and amenities are your strongest area (18% positive feedback). Guests love the convenient location and appreciate amenities like the pool and parking. The gym equipment could use updating though.`;
-            }
-            
-            if (lowerMessage.includes('price') || lowerMessage.includes('value')) {
-                return `Pricing perception is neutral (15% of comments). Guests are divided - some see good value while others feel overcharged. Hidden fees are a particular frustration. Consider more transparent pricing.`;
+
+            // Check if asking about a specific theme
+            const matchedTheme = allThemes.find(theme => 
+                lowerMessage.includes(theme.name.toLowerCase()) || 
+                theme.topWords.some(word => lowerMessage.includes(word.toLowerCase()))
+            );
+
+            if (matchedTheme) {
+                const sentDist = matchedTheme.sentiment?.distribution || {};
+                return `**${matchedTheme.name}** represents ${matchedTheme.percentage}% of your feedback (${matchedTheme.size} comments). 
+
+**Sentiment:** ${sentDist.positive || 0} positive (${sentDist.positivePercentage || 0}%), ${sentDist.negative || 0} negative (${sentDist.negativePercentage || 0}%), ${sentDist.neutral || 0} neutral (${sentDist.neutralPercentage || 0}%)
+
+**Description:** ${matchedTheme.description || 'AI-identified theme'}
+
+**Key terms:** ${matchedTheme.topWords.join(', ')}
+
+Would you like to see all comments in this theme or ask about a different aspect?`;
             }
             
             if (lowerMessage.includes('sentiment') || lowerMessage.includes('negative') || lowerMessage.includes('positive')) {
                 const neg = allThemes.filter(t => t.sentiment === 'negative').length;
                 const pos = allThemes.filter(t => t.sentiment === 'positive').length;
                 const neu = allThemes.filter(t => t.sentiment === 'neutral').length;
+                const totalComments = allThemes.reduce((sum, t) => sum + t.size, 0);
                 
-                return `Sentiment breakdown: ${neg} themes are negative, ${neu} neutral, and ${pos} positive. Staff service and room quality are your main negative themes, while location/amenities are positive strengths.`;
+                const topNegTheme = allThemes.filter(t => t.sentiment === 'negative').sort((a, b) => b.size - a.size)[0];
+                const topPosTheme = allThemes.filter(t => t.sentiment === 'positive').sort((a, b) => b.size - a.size)[0];
+                
+                return `**Sentiment Overview:** ${neg} themes negative, ${neu} neutral, ${pos} positive.
+                
+**Biggest concern:** ${topNegTheme ? `${topNegTheme.name} (${topNegTheme.percentage}% of feedback)` : 'None identified'}
+
+**Biggest strength:** ${topPosTheme ? `${topPosTheme.name} (${topPosTheme.percentage}% of feedback)` : 'None identified'}
+
+Ask about specific themes for detailed breakdown!`;
             }
             
             if (lowerMessage.includes('recommend') || lowerMessage.includes('improve') || lowerMessage.includes('action')) {
-                return `Top recommendations: 1) Staff training for responsiveness and courtesy, 2) Strengthen housekeeping quality control, 3) Review breakfast service operations, 4) Transparent pricing communication. These address your main pain points.`;
+                const negativeThemes = allThemes.filter(t => t.sentiment === 'negative').sort((a, b) => b.size - a.size);
+                const recommendations = negativeThemes.slice(0, 3).map((theme, i) => 
+                    `${i + 1}) Address **${theme.name}** - affects ${theme.percentage}% of feedback`
+                );
+                
+                return `**Top Recommendations:**\n${recommendations.join('\n')}\n\nThese themes have the highest negative impact. Focus on these areas to improve customer satisfaction.`;
             }
             
-            if (lowerMessage.includes('insight') || lowerMessage.includes('summary')) {
-                return `Key insights: Service quality (staff + rooms) represents 60% of your feedback themes. These operational areas are your biggest opportunities. Your location advantage should be leveraged while fixing service gaps.`;
+            if (lowerMessage.includes('summary') || lowerMessage.includes('overview')) {
+                const totalComments = allThemes.reduce((sum, t) => sum + t.size, 0);
+                const biggestTheme = allThemes.sort((a, b) => b.size - a.size)[0];
+                
+                return `**Analysis Summary:**
+- **${totalComments} total comments** analyzed into **${allThemes.length} themes**
+- **Biggest theme:** ${biggestTheme.name} (${biggestTheme.percentage}%)
+- **Themes identified:** ${allThemes.map(t => t.name).join(', ')}
+
+Ask about specific themes, sentiment analysis, or recommendations for more details!`;
+            }
+
+            // Search for themes containing keywords from the question
+            const relevantThemes = allThemes.filter(theme => 
+                theme.topWords.some(word => lowerMessage.includes(word.toLowerCase()))
+            );
+
+            if (relevantThemes.length > 0) {
+                const theme = relevantThemes[0];
+                return `Found **${theme.name}** theme related to your question (${theme.percentage}% of feedback). ${theme.description || ''} Would you like more details about this theme?`;
             }
             
-            return `I can help analyze your guest feedback themes! Ask me about specific areas like "staff service", "room quality", or "pricing concerns". I can also provide insights on sentiment patterns or recommendations for improvement.`;
+            return `I can help analyze your uploaded data! Try asking:
+• "What's the sentiment breakdown?"
+• "Tell me about [theme name]"  
+• "What are the main issues?"
+• "Give me recommendations"
+• "Show me a summary"
+
+**Your themes:** ${allThemes.map(t => t.name).join(', ')}`;
         }
 
         function updateAnalysisSummary(results) {
