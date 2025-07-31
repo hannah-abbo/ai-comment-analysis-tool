@@ -48,15 +48,27 @@ app.post('/api/analyze', upload.single('file'), async (req, res) => {
         const commentColumns = Object.keys(sampleRow).filter(key => {
           const avgLength = results.slice(0, 10).reduce((sum, row) => 
             sum + (row[key] || '').length, 0) / 10;
-          return avgLength > 20; // Likely comment if avg > 20 chars
+          return avgLength > 10; // Lowered from 20 to 10 chars - more lenient
         });
+        
+        // Fallback: if no comment columns detected, use all text columns
+        if (commentColumns.length === 0) {
+          console.log('No comment columns detected, using all columns with text data');
+          const allColumns = Object.keys(sampleRow).filter(key => {
+            const hasText = results.slice(0, 5).some(row => 
+              (row[key] || '').trim().length > 0 && isNaN(row[key])
+            );
+            return hasText;
+          });
+          commentColumns.push(...allColumns);
+        }
         
         console.log('Detected comment columns:', commentColumns);
         
         const comments = results.map(row => {
           const commentText = commentColumns.map(col => row[col] || '').join(' ');
           return commentText.toLowerCase().trim();
-        }).filter(comment => comment.length > 10);
+        }).filter(comment => comment.length > 3); // Lowered from 10 to 3 chars - more lenient
         
         console.log(`Extracted ${comments.length} valid comments from ${results.length} rows`);
         
@@ -72,7 +84,7 @@ app.post('/api/analyze', upload.single('file'), async (req, res) => {
             wordCount: comment.split(/\s+/).length,
             tokens: filtered
           };
-        }).filter(item => item.tokens.length > 2);
+        }).filter(item => item.tokens.length > 0); // Lowered from 2 to 0 - more lenient
         
         console.log(`Processed ${processedComments.length} comments with sufficient tokens`);
         
@@ -83,11 +95,11 @@ app.post('/api/analyze', upload.single('file'), async (req, res) => {
         });
         
         // Simple topic discovery using TF-IDF term clustering
-        const numTopics = Math.min(8, Math.max(3, Math.floor(processedComments.length / 15)));
+        const numTopics = Math.min(8, Math.max(1, Math.floor(processedComments.length / 5)));
         console.log(`Creating ${numTopics} topics from ${processedComments.length} processed comments`);
         
-        if (processedComments.length < 3) {
-          throw new Error(`Not enough valid comments to analyze. Found ${processedComments.length} processable comments, need at least 3.`);
+        if (processedComments.length < 1) {
+          throw new Error(`Not enough valid comments to analyze. Found ${processedComments.length} processable comments, need at least 1.`);
         }
         
         const topicTerms = [];
