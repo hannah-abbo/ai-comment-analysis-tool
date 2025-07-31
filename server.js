@@ -241,19 +241,25 @@ Respond in JSON format with an array of classifications:
           const themeGroupsArray = Object.values(themeGroups).filter(group => group.comments.length > 0);
           
           finalTopics = await Promise.all(themeGroupsArray.map(async (group, index) => {
-              // Calculate sentiment for this theme using Claude for accuracy
+              // Calculate sentiment for this theme using Claude for business-context accuracy
               console.log(`Analyzing sentiment for theme: ${group.name}`);
-              const themeSentiments = [];
+              let themeSentiments = [];
               
               try {
-                // Use Claude for more accurate sentiment analysis
-                const sentimentBatchSize = 10;
+                // Use Claude for business-context sentiment analysis
+                const sentimentBatchSize = 15; // Larger batches for efficiency
+                
                 for (let i = 0; i < group.comments.length; i += sentimentBatchSize) {
                   const batch = group.comments.slice(i, i + sentimentBatchSize);
-                  const sentimentPrompt = `Analyze the sentiment of these customer comments. For each comment, determine if it's positive, negative, or neutral.
+                  const sentimentPrompt = `Analyze the sentiment of these customer feedback comments in a business context. Consider complaints about price, service, quality as NEGATIVE. Praise and satisfaction as POSITIVE.
 
 Comments:
 ${batch.map((comment, idx) => `${i + idx + 1}. ${comment.text}`).join('\n')}
+
+For each comment, determine if it expresses:
+- POSITIVE: Satisfaction, praise, good experiences
+- NEGATIVE: Complaints, dissatisfaction, problems, "too expensive", poor service
+- NEUTRAL: Factual statements, mixed feelings, or unclear sentiment
 
 Respond in JSON format:
 {
@@ -261,7 +267,7 @@ Respond in JSON format:
     {
       "commentIndex": 1,
       "sentiment": "positive|negative|neutral",
-      "confidence": 0.9
+      "reasoning": "brief explanation"
     }
   ]
 }`;
@@ -269,64 +275,43 @@ Respond in JSON format:
                   try {
                     const sentimentResponse = await anthropic.messages.create({
                       model: "claude-3-haiku-20240307",
-                      max_tokens: 800,
+                      max_tokens: 1000,
                       temperature: 0.1,
                       messages: [{ role: "user", content: sentimentPrompt }]
                     });
 
                     const sentimentData = JSON.parse(sentimentResponse.content[0].text);
                     sentimentData.sentiments.forEach(result => {
-                      const comparative = result.sentiment === 'positive' ? 0.5 : 
-                                        result.sentiment === 'negative' ? -0.5 : 0;
                       themeSentiments.push({
-                        score: comparative * 10,
-                        comparative: comparative,
                         classification: result.sentiment,
-                        confidence: result.confidence
+                        reasoning: result.reasoning,
+                        confidence: 0.9
                       });
                     });
                   } catch (sentimentError) {
                     console.warn(`Sentiment analysis failed for batch in ${group.name}:`, sentimentError.message);
-                    // Fallback to basic sentiment
-                    batch.forEach(comment => {
-                      try {
-                        const score = sentiment(comment.text);
-                        const classification = (score?.comparative || 0) > 0.1 ? 'positive' : 
-                                             (score?.comparative || 0) < -0.1 ? 'negative' : 'neutral';
-                        themeSentiments.push({
-                          score: score?.score || 0,
-                          comparative: score?.comparative || 0,
-                          classification: classification,
-                          confidence: 0.7
-                        });
-                      } catch (error) {
-                        themeSentiments.push({
-                          score: 0,
-                          comparative: 0,
-                          classification: 'neutral',
-                          confidence: 0.5
-                        });
-                      }
+                    // Fallback: classify as neutral
+                    batch.forEach(() => {
+                      themeSentiments.push({
+                        classification: 'neutral',
+                        reasoning: 'fallback classification',
+                        confidence: 0.5
+                      });
                     });
                   }
                 }
               } catch (error) {
                 console.warn(`Theme sentiment analysis failed for ${group.name}:`, error.message);
-                // Fallback for entire theme
-                group.comments.forEach(comment => {
+                group.comments.forEach(() => {
                   themeSentiments.push({
-                    score: 0,
-                    comparative: 0,
                     classification: 'neutral',
+                    reasoning: 'error fallback',
                     confidence: 0.5
                   });
                 });
               }
 
-              const avgSentiment = themeSentiments.reduce((sum, s) => 
-                sum + s.comparative, 0) / themeSentiments.length;
-              
-              // Use actual classifications from Claude instead of just averages
+              // Calculate sentiment distribution
               const sentimentCounts = {
                 positive: themeSentiments.filter(s => s.classification === 'positive').length,
                 negative: themeSentiments.filter(s => s.classification === 'negative').length,
@@ -336,6 +321,9 @@ Respond in JSON format:
               // Overall theme sentiment based on majority
               const sentimentClassification = sentimentCounts.positive > sentimentCounts.negative && sentimentCounts.positive > sentimentCounts.neutral ? 'positive' :
                 sentimentCounts.negative > sentimentCounts.positive && sentimentCounts.negative > sentimentCounts.neutral ? 'negative' : 'neutral';
+              
+              // Calculate average sentiment score for compatibility
+              const avgSentiment = sentimentCounts.positive > 0 ? 0.3 : sentimentCounts.negative > 0 ? -0.3 : 0;
 
               const volume = group.comments.length;
               const percentage = Math.round((volume / comments.length) * 100);
@@ -461,6 +449,87 @@ Respond in JSON format:
         error: 'File processing failed: ' + error.message 
       });
     });
+});
+
+// Real chatbot API endpoint with Claude integration
+app.post('/api/chat', express.json(), async (req, res) => {
+  try {
+    const { message, analysisResults } = req.body;
+    
+    if (!message) {
+      return res.status(400).json({ success: false, error: 'Message is required' });
+    }
+    
+    if (!anthropic) {
+      return res.status(500).json({ success: false, error: 'Claude API not configured' });
+    }
+
+    // Prepare analysis context for the chatbot
+    const analysisContext = analysisResults ? {
+      totalComments: analysisResults.totalComments,
+      themes: analysisResults.topics?.map(topic => ({
+        name: topic.title,
+        percentage: topic.percentage,
+        volume: topic.volume,
+        sentiment: topic.sentiment?.classification,
+        description: topic.llmDescription,
+        sentimentBreakdown: {
+          positive: topic.sentiment?.distribution?.positive || 0,
+          negative: topic.sentiment?.distribution?.negative || 0,
+          neutral: topic.sentiment?.distribution?.neutral || 0,
+          positivePercentage: topic.sentiment?.distribution?.positivePercentage || 0,
+          negativePercentage: topic.sentiment?.distribution?.negativePercentage || 0,
+          neutralPercentage: topic.sentiment?.distribution?.neutralPercentage || 0
+        }
+      })) || []
+    } : null;
+
+    const chatPrompt = `You are an AI assistant analyzing customer feedback data. You have access to the following analysis results:
+
+${analysisContext ? `
+ANALYSIS DATA:
+- Total Comments: ${analysisContext.totalComments}
+- Themes Identified: ${analysisContext.themes.length}
+
+THEMES BREAKDOWN:
+${analysisContext.themes.map(theme => `
+• ${theme.name}: ${theme.volume} comments (${theme.percentage}%)
+  - Overall Sentiment: ${theme.sentiment}
+  - Breakdown: ${theme.sentimentBreakdown.positive} positive (${theme.sentimentBreakdown.positivePercentage}%), ${theme.sentimentBreakdown.negative} negative (${theme.sentimentBreakdown.negativePercentage}%), ${theme.sentimentBreakdown.neutral} neutral (${theme.sentimentBreakdown.neutralPercentage}%)
+  - Description: ${theme.description}
+`).join('')}
+` : 'No analysis data available. Please ask the user to upload and analyze a CSV file first.'}
+
+User Question: ${message}
+
+Instructions:
+1. ONLY use the provided analysis data above to answer questions
+2. Be specific with numbers and percentages from the data
+3. If asked about themes not in the data, say they weren't found
+4. Provide actionable insights based on the sentiment and volume data
+5. Keep responses concise but informative
+
+Answer the user's question based solely on this analysis data:`;
+
+    const response = await anthropic.messages.create({
+      model: "claude-3-haiku-20240307",
+      max_tokens: 500,
+      temperature: 0.3,
+      messages: [{ role: "user", content: chatPrompt }]
+    });
+
+    res.json({
+      success: true,
+      response: response.content[0].text
+    });
+
+  } catch (error) {
+    console.error('Chat API error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to generate chat response: ' + error.message
+    });
+  }
 });
 
 app.get('/api/health', (req, res) => {
