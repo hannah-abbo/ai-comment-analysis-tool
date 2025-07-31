@@ -1073,8 +1073,16 @@
                     databricksConnected = true;
                     statusElement.className = 'connection-status connected';
                     statusIcon.textContent = '🟢';
-                    statusText.textContent = data.status || 'Connected to Analysis API';
-                    console.log('databricksConnected set to true');
+                    if (data.anthropicConfigured) {
+                        statusText.textContent = data.message || 'Connected to Analysis API';
+                        console.log('databricksConnected set to true');
+                    } else {
+                        databricksConnected = false;
+                        statusElement.className = 'connection-status disconnected';
+                        statusIcon.textContent = '🔑';
+                        statusText.textContent = 'API Key Required - Set ANTHROPIC_API_KEY environment variable';
+                        console.log('databricksConnected set to false - API key missing');
+                    }
                 })
                 .catch(error => {
                     console.error('Backend connection failed:', error);
