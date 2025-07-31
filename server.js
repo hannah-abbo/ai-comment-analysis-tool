@@ -251,15 +251,17 @@ Respond in JSON format with an array of classifications:
                 
                 for (let i = 0; i < group.comments.length; i += sentimentBatchSize) {
                   const batch = group.comments.slice(i, i + sentimentBatchSize);
-                  const sentimentPrompt = `Analyze the sentiment of these customer feedback comments in a business context. Consider complaints about price, service, quality as NEGATIVE. Praise and satisfaction as POSITIVE.
+                  const sentimentPrompt = `Analyze the sentiment of these customer feedback comments in a business context. You must classify price complaints as NEGATIVE.
 
 Comments:
 ${batch.map((comment, idx) => `${i + idx + 1}. ${comment.text}`).join('\n')}
 
-For each comment, determine if it expresses:
-- POSITIVE: Satisfaction, praise, good experiences
-- NEGATIVE: Complaints, dissatisfaction, problems, "too expensive", poor service
-- NEUTRAL: Factual statements, mixed feelings, or unclear sentiment
+Classification Rules:
+- NEGATIVE: Any complaints including "too expensive", "overpriced", "costly", "not worth it", poor service, quality issues, dissatisfaction, problems
+- POSITIVE: Praise, satisfaction, "great value", "worth it", good experiences, recommendations
+- NEUTRAL: Factual statements, mixed feelings, unclear sentiment
+
+IMPORTANT: Price complaints are ALWAYS negative, even if phrased politely.
 
 Respond in JSON format:
 {
@@ -465,6 +467,7 @@ app.post('/api/chat', express.json(), async (req, res) => {
     }
 
     // Prepare analysis context for the chatbot
+    console.log('Chat API - Received analysisResults:', JSON.stringify(analysisResults, null, 2));
     const analysisContext = analysisResults ? {
       totalComments: analysisResults.totalComments,
       themes: analysisResults.topics?.map(topic => ({

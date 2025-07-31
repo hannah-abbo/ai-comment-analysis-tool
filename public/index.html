@@ -1866,6 +1866,7 @@
             document.getElementById('chatSendBtn').disabled = true;
             
             try {
+                console.log('Sending chat request with analyzedResults:', analyzedResults);
                 // Use real API call to chatbot endpoint
                 const response = await fetch('/api/chat', {
                     method: 'POST',
@@ -1874,7 +1875,26 @@
                     },
                     body: JSON.stringify({
                         message: message,
-                        analysisResults: analyzedResults
+                        analysisResults: analyzedResults ? {
+                            totalComments: analyzedResults.totalComments,
+                            topics: analyzedResults.themes?.map(theme => ({
+                                title: theme.name,
+                                percentage: theme.percentage,
+                                volume: theme.size,
+                                sentiment: {
+                                    classification: theme.sentiment?.classification || theme.sentiment,
+                                    distribution: theme.sentiment?.distribution || {
+                                        positive: 0,
+                                        negative: 0,
+                                        neutral: 0,
+                                        positivePercentage: 0,
+                                        negativePercentage: 0,
+                                        neutralPercentage: 0
+                                    }
+                                },
+                                llmDescription: theme.description || 'AI-identified theme'
+                            })) || []
+                        } : null
                     })
                 });
 
