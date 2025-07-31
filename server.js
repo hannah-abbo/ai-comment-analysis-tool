@@ -170,8 +170,8 @@ Respond in JSON format with an array of themes:
           const batchSize = Math.max(50, Math.ceil(comments.length / maxBatches)); // Minimum 50 per batch
           const actualBatches = Math.ceil(comments.length / batchSize);
           
-          console.log(`AGGRESSIVE BATCHING: ${comments.length} comments in ${actualBatches} batches of ~${batchSize} each`);
-          console.log(`This will reduce API calls from 77 to ${actualBatches}`);
+          console.log(`DYNAMIC BATCHING: ${comments.length} comments in ${actualBatches} batches of ~${batchSize} each`);
+          console.log(`Optimized batch size to minimize API calls while staying under rate limits`);
           
           for (let i = 0; i < comments.length; i += batchSize) {
             const batch = comments.slice(i, i + batchSize);
