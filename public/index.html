@@ -1983,9 +1983,7 @@
                 }
             } catch (error) {
                 console.error('Chat API error:', error);
-                // Fallback to mock response
-                const fallbackResponse = generateChatResponse(message);
-                addChatMessage(`**Note: Using offline mode** - ${fallbackResponse}`, 'assistant');
+                addChatMessage('**Note: Using offline mode** - I am unable to connect to the chat API. Please check the server logs.', 'assistant');
             }
             
             input.disabled = false;
