@@ -160,17 +160,36 @@ Respond in JSON format with an array of themes:
           console.log('Step 2: Classifying each comment into themes...');
           
           const commentClassifications = [];
-          // Larger batch sizes with longer delays to reduce total API calls
-          const batchSize = estimatedTokens > 25000 ? 25 : estimatedTokens > 15000 ? 30 : 40;
+          // Dynamic batch sizing based on total comments to target ~15-25 total batches for any dataset
+          const targetBatches = 20; // Optimal number of API calls for rate limiting
+          const calculatedBatchSize = Math.ceil(comments.length / targetBatches);
+          
+          // Apply token-based constraints to ensure we don't exceed API limits
+          const maxTokensPerBatch = 400; // Conservative limit per batch
+          const avgTokensPerComment = Math.ceil(estimatedTokens / comments.length);
+          const tokenLimitedBatchSize = Math.floor(maxTokensPerBatch / avgTokensPerComment);
+          
+          // Use the smaller of the two to ensure both constraints are met
+          const batchSize = Math.min(calculatedBatchSize, tokenLimitedBatchSize);
+          const actualBatches = Math.ceil(comments.length / batchSize);
+          
+          console.log(`Dynamic batch sizing: ${comments.length} comments, target ${targetBatches} batches`);
+          console.log(`Calculated batch size: ${calculatedBatchSize}, token-limited: ${tokenLimitedBatchSize}`);
+          console.log(`Using batch size: ${batchSize}, will create ${actualBatches} batches`);
           
           for (let i = 0; i < comments.length; i += batchSize) {
             const batch = comments.slice(i, i + batchSize);
             const batchComments = batch.map((comment, index) => 
               `${i + index + 1}. ${comment}`).join('\n');
 
-            // Add delay to avoid rate limits (6 seconds between requests = 10 requests/minute max)
+            // Dynamic delay based on total API calls needed to stay under rate limits
             if (i > 0) {
-              await new Promise(resolve => setTimeout(resolve, 6000));
+              // Scale delay based on how many total API calls we expect
+              const totalExpectedCalls = actualBatches * 6; // Classification + sentiment for 5 themes
+              const delayMs = totalExpectedCalls > 50 ? 5000 : totalExpectedCalls > 30 ? 4000 : 3000;
+              
+              await new Promise(resolve => setTimeout(resolve, delayMs));
+              console.log(`Waiting ${delayMs/1000}s before batch ${Math.floor(i/batchSize) + 1}/${actualBatches}...`);
             }
 
             const classificationPrompt = `Classify each of these comments into one of the identified themes. Each comment should be assigned to exactly one theme.
@@ -312,14 +331,22 @@ Respond in JSON format with an array of classifications:
               
               try {
                 // Use Claude for business-context sentiment analysis
-                const sentimentBatchSize = estimatedTokens > 25000 ? 20 : estimatedTokens > 15000 ? 25 : 30;
+                // Dynamic sentiment batch sizing - aim for ~10-15 batches per theme
+                const targetSentimentBatches = 12;
+                const calculatedSentimentBatchSize = Math.ceil(group.comments.length / targetSentimentBatches);
+                const tokenLimitedSentimentBatchSize = Math.floor(maxTokensPerBatch / avgTokensPerComment);
+                const sentimentBatchSize = Math.min(calculatedSentimentBatchSize, tokenLimitedSentimentBatchSize);
+                
+                console.log(`Sentiment batching for ${group.name}: ${group.comments.length} comments, using batch size ${sentimentBatchSize}`);
                 
                 for (let i = 0; i < group.comments.length; i += sentimentBatchSize) {
                   const batch = group.comments.slice(i, i + sentimentBatchSize);
                   
-                  // Add delay to avoid rate limits
+                  // Dynamic delay for sentiment analysis
                   if (i > 0) {
-                    await new Promise(resolve => setTimeout(resolve, 6000));
+                    const sentimentDelayMs = group.comments.length > 200 ? 4000 : 3000;
+                    await new Promise(resolve => setTimeout(resolve, sentimentDelayMs));
+                    console.log(`Waiting ${sentimentDelayMs/1000}s before sentiment batch for ${group.name}...`);
                   }
                   
                   const sentimentPrompt = `Analyze the sentiment of these comments in a business context. Focus on the overall emotional tone and satisfaction level expressed.
