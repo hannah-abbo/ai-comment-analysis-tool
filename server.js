@@ -160,36 +160,23 @@ Respond in JSON format with an array of themes:
           console.log('Step 2: Classifying each comment into themes...');
           
           const commentClassifications = [];
-          // Dynamic batch sizing based on total comments to target ~15-25 total batches for any dataset
-          const targetBatches = 20; // Optimal number of API calls for rate limiting
-          const calculatedBatchSize = Math.ceil(comments.length / targetBatches);
-          
-          // Apply token-based constraints to ensure we don't exceed API limits
-          const maxTokensPerBatch = 400; // Conservative limit per batch
-          const avgTokensPerComment = Math.ceil(estimatedTokens / comments.length);
-          const tokenLimitedBatchSize = Math.floor(maxTokensPerBatch / avgTokensPerComment);
-          
-          // Use the smaller of the two to ensure both constraints are met
-          const batchSize = Math.min(calculatedBatchSize, tokenLimitedBatchSize);
+          // AGGRESSIVE batch sizing to minimize API calls - target max 10 total batches
+          const maxBatches = 10;
+          const batchSize = Math.max(50, Math.ceil(comments.length / maxBatches)); // Minimum 50 per batch
           const actualBatches = Math.ceil(comments.length / batchSize);
           
-          console.log(`Dynamic batch sizing: ${comments.length} comments, target ${targetBatches} batches`);
-          console.log(`Calculated batch size: ${calculatedBatchSize}, token-limited: ${tokenLimitedBatchSize}`);
-          console.log(`Using batch size: ${batchSize}, will create ${actualBatches} batches`);
+          console.log(`AGGRESSIVE BATCHING: ${comments.length} comments in ${actualBatches} batches of ~${batchSize} each`);
+          console.log(`This will reduce API calls from 77 to ${actualBatches}`);
           
           for (let i = 0; i < comments.length; i += batchSize) {
             const batch = comments.slice(i, i + batchSize);
             const batchComments = batch.map((comment, index) => 
               `${i + index + 1}. ${comment}`).join('\n');
 
-            // Dynamic delay based on total API calls needed to stay under rate limits
+            // LONG delays to avoid rate limits completely
             if (i > 0) {
-              // Scale delay based on how many total API calls we expect
-              const totalExpectedCalls = actualBatches * 6; // Classification + sentiment for 5 themes
-              const delayMs = totalExpectedCalls > 50 ? 5000 : totalExpectedCalls > 30 ? 4000 : 3000;
-              
-              await new Promise(resolve => setTimeout(resolve, delayMs));
-              console.log(`Waiting ${delayMs/1000}s before batch ${Math.floor(i/batchSize) + 1}/${actualBatches}...`);
+              console.log(`Waiting 10 seconds before batch ${Math.floor(i/batchSize) + 1}/${actualBatches} to avoid rate limits...`);
+              await new Promise(resolve => setTimeout(resolve, 10000)); // 10 second delay
             }
 
             const classificationPrompt = `Classify each of these comments into one of the identified themes. Each comment should be assigned to exactly one theme.
@@ -325,130 +312,38 @@ Respond in JSON format with an array of classifications:
           const themeGroupsArray = Object.values(themeGroups).filter(group => group.comments.length > 0);
           
           finalTopics = await Promise.all(themeGroupsArray.map(async (group, index) => {
-              // Calculate sentiment for this theme using Claude for business-context accuracy
-              console.log(`Analyzing sentiment for theme: ${group.name}`);
+              // SIMPLIFIED sentiment analysis - use local sentiment library instead of Claude
+              console.log(`Analyzing sentiment for theme: ${group.name} using local analysis (avoiding API calls)`);
               let themeSentiments = [];
               
               try {
-                // Use Claude for business-context sentiment analysis
-                // Dynamic sentiment batch sizing - aim for ~10-15 batches per theme
-                const targetSentimentBatches = 12;
-                const calculatedSentimentBatchSize = Math.ceil(group.comments.length / targetSentimentBatches);
-                const tokenLimitedSentimentBatchSize = Math.floor(maxTokensPerBatch / avgTokensPerComment);
-                const sentimentBatchSize = Math.min(calculatedSentimentBatchSize, tokenLimitedSentimentBatchSize);
-                
-                console.log(`Sentiment batching for ${group.name}: ${group.comments.length} comments, using batch size ${sentimentBatchSize}`);
-                
-                for (let i = 0; i < group.comments.length; i += sentimentBatchSize) {
-                  const batch = group.comments.slice(i, i + sentimentBatchSize);
+                // Use local sentiment analysis to avoid API rate limits entirely
+                group.comments.forEach(comment => {
+                  const score = sentiment(comment.text);
+                  let classification = 'neutral';
                   
-                  // Dynamic delay for sentiment analysis
-                  if (i > 0) {
-                    const sentimentDelayMs = group.comments.length > 200 ? 4000 : 3000;
-                    await new Promise(resolve => setTimeout(resolve, sentimentDelayMs));
-                    console.log(`Waiting ${sentimentDelayMs/1000}s before sentiment batch for ${group.name}...`);
+                  // Business context rules
+                  const text = comment.text.toLowerCase();
+                  if (text.includes('expensive') || text.includes('costly') || text.includes('overpriced') || 
+                      text.includes('disappointed') || text.includes('terrible') || text.includes('awful') ||
+                      text.includes('bad') || text.includes('worst') || text.includes('hate')) {
+                    classification = 'negative';
+                  } else if (text.includes('great') || text.includes('excellent') || text.includes('amazing') ||
+                             text.includes('love') || text.includes('perfect') || text.includes('wonderful') ||
+                             text.includes('best') || text.includes('fantastic')) {
+                    classification = 'positive';
+                  } else if (score.comparative > 0.1) {
+                    classification = 'positive';
+                  } else if (score.comparative < -0.1) {
+                    classification = 'negative';
                   }
                   
-                  const sentimentPrompt = `Analyze the sentiment of these comments in a business context. Focus on the overall emotional tone and satisfaction level expressed.
-
-Comments:
-${batch.map((comment, idx) => `${i + idx + 1}. ${comment.text}`).join('\n')}
-
-Classification Rules:
-- NEGATIVE: Complaints, dissatisfaction, problems, criticism, frustration, disappointment, negative experiences
-- POSITIVE: Praise, satisfaction, appreciation, recommendations, positive experiences, expressions of happiness or contentment
-- NEUTRAL: Factual statements, mixed feelings, unclear sentiment, objective descriptions without clear emotional tone
-
-IMPORTANT: Focus on the emotional tone and satisfaction level, not specific topics. Consider business context where complaints about any aspect (cost, quality, service, etc.) indicate dissatisfaction.
-
-Respond in JSON format:
-{
-  "sentiments": [
-    {
-      "commentIndex": 1,
-      "sentiment": "positive|negative|neutral",
-      "reasoning": "brief explanation"
-    }
-  ]
-}`;
-
-                  try {
-                    const sentimentResponse = await anthropic.messages.create({
-                      model: "claude-3-haiku-20240307",
-                      max_tokens: 1000,
-                      temperature: 0.1,
-                      messages: [{ role: "user", content: sentimentPrompt }]
-                    });
-
-                    let sentimentData;
-                    try {
-                      sentimentData = JSON.parse(sentimentResponse.content[0].text);
-                    } catch (jsonError) {
-                      console.warn(`Sentiment JSON parsing failed for ${group.name}:`, jsonError.message);
-                      console.warn('Raw response:', sentimentResponse.content[0].text);
-                      // Create fallback sentiment data
-                      sentimentData = {
-                        sentiments: batch.map((comment, idx) => ({
-                          commentIndex: i + idx + 1,
-                          sentiment: 'neutral',
-                          reasoning: 'JSON parsing failed, defaulted to neutral'
-                        }))
-                      };
-                    }
-                    
-                    sentimentData.sentiments.forEach(result => {
-                      themeSentiments.push({
-                        classification: result.sentiment,
-                        reasoning: result.reasoning,
-                        confidence: 0.9
-                      });
-                    });
-                  } catch (sentimentError) {
-                    console.warn(`Sentiment analysis failed for batch in ${group.name}:`, sentimentError.message);
-                    
-                    // Handle rate limit errors specifically
-                    if (sentimentError.message.includes('429') || sentimentError.message.includes('rate_limit_error')) {
-                      console.warn('Rate limit hit on sentiment analysis, waiting 60 seconds...');
-                      await new Promise(resolve => setTimeout(resolve, 60000));
-                      // Retry this batch once
-                      try {
-                        const retryResponse = await anthropic.messages.create({
-                          model: "claude-3-haiku-20240307",
-                          max_tokens: 1000,
-                          temperature: 0.1,
-                          messages: [{ role: "user", content: sentimentPrompt }]
-                        });
-                        const retryData = JSON.parse(retryResponse.content[0].text);
-                        retryData.sentiments.forEach(result => {
-                          themeSentiments.push({
-                            classification: result.sentiment,
-                            reasoning: result.reasoning,
-                            confidence: 0.9
-                          });
-                        });
-                        console.log(`Sentiment retry successful for ${group.name}`);
-                      } catch (retryError) {
-                        console.warn('Sentiment retry also failed, using neutral fallback');
-                        batch.forEach(() => {
-                          themeSentiments.push({
-                            classification: 'neutral',
-                            reasoning: 'retry failed fallback',
-                            confidence: 0.5
-                          });
-                        });
-                      }
-                    } else {
-                      // Fallback: classify as neutral
-                      batch.forEach(() => {
-                        themeSentiments.push({
-                          classification: 'neutral',
-                          reasoning: 'fallback classification',
-                          confidence: 0.5
-                        });
-                      });
-                    }
-                  }
-                }
+                  themeSentiments.push({
+                    classification: classification,
+                    reasoning: `Local analysis: score ${score.comparative}`,
+                    confidence: 0.8
+                  });
+                });
               } catch (error) {
                 console.warn(`Theme sentiment analysis failed for ${group.name}:`, error.message);
                 group.comments.forEach(() => {
