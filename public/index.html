@@ -1086,7 +1086,19 @@
                     databricksConnected = false;
                     statusElement.className = 'connection-status disconnected';
                     statusIcon.textContent = '🔴';
-                    statusText.textContent = 'Backend API not accessible - check server is running';
+                    
+                    let statusMessage = 'Backend API not accessible - check server is running';
+                    if (error.message.includes('520')) {
+                        statusMessage = 'Server Error (520) - CodeSandbox VM crashed or overloaded';
+                    } else if (error.message.includes('502')) {
+                        statusMessage = 'Bad Gateway (502) - Server not responding, try restarting';
+                    } else if (error.message.includes('503')) {
+                        statusMessage = 'Service Unavailable (503) - Server overloaded, wait and retry';
+                    } else if (error.message.includes('Failed to fetch')) {
+                        statusMessage = 'Network Error - Cannot reach server';
+                    }
+                    
+                    statusText.textContent = statusMessage;
                 });
         }
 
@@ -1317,7 +1329,7 @@
             }
         }
 
-        function analyzeWithRealAPI(columnName) {
+        function analyzeWithRealAPI(columnName, retryCount = 0) {
             // Create FormData with the CSV file
             const formData = new FormData();
             
@@ -1363,15 +1375,40 @@
             })
             .catch(error => {
                 console.error('API Analysis Failed:', error);
+                
+                // Auto-retry for temporary server errors (520, 502, 503)
+                const isServerError = error.message.includes('520') || error.message.includes('502') || 
+                                    error.message.includes('503') || error.message.includes('Bad Gateway') ||
+                                    error.message.includes('Web server is returning an unknown error') ||
+                                    error.message.includes('Service Unavailable');
+                
+                if (isServerError && retryCount < 2) {
+                    console.log(`Server error detected, retrying... (attempt ${retryCount + 1}/3)`);
+                    document.getElementById('progressInfo').textContent = `Server error, retrying... (attempt ${retryCount + 1}/3)`;
+                    
+                    setTimeout(() => {
+                        analyzeWithRealAPI(columnName, retryCount + 1);
+                    }, 3000 * (retryCount + 1)); // Exponential backoff: 3s, 6s
+                    return;
+                }
+                
                 document.getElementById('loadingSection').style.display = 'none';
                 
                 let errorMessage = error.message;
                 if (errorMessage.includes('502') || errorMessage.includes('Bad Gateway')) {
                     errorMessage = 'Server unavailable (502 Error). This usually means the CodeSandbox VM needs to be restarted. Try refreshing the page or restarting the sandbox.';
+                } else if (errorMessage.includes('520') || errorMessage.includes('Web server is returning an unknown error')) {
+                    errorMessage = 'CodeSandbox server error (520). The VM may be overloaded or crashed. Please try: 1) Refresh the page, 2) Restart the sandbox, or 3) Try again in a few minutes.';
+                } else if (errorMessage.includes('503') || errorMessage.includes('Service Unavailable')) {
+                    errorMessage = 'Service temporarily unavailable (503). CodeSandbox may be under heavy load. Please wait a few minutes and try again.';
                 } else if (errorMessage.includes('token') || errorMessage.includes('limit')) {
                     errorMessage = 'API token limit exceeded. Please try with a smaller dataset (under 1,000 comments) or contact support.';
-                } else if (errorMessage.includes('Network')) {
+                } else if (errorMessage.includes('Network') || errorMessage.includes('Failed to fetch')) {
                     errorMessage = 'Network connection failed. Please check your internet connection and try again.';
+                }
+                
+                if (retryCount > 0) {
+                    errorMessage += ` (Failed after ${retryCount + 1} attempts)`;
                 }
                 
                 showError(`Analysis failed: ${errorMessage}`);
