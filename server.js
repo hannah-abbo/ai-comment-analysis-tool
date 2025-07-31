@@ -107,12 +107,12 @@ app.post('/api/analyze', upload.single('file'), async (req, res) => {
           const commentsSample = sampleComments.map((comment, index) => 
             `${index + 1}. ${comment}`).join('\n');
 
-          const themeIdentificationPrompt = `Analyze these customer comments about cruise booking decisions and identify 3-8 distinct themes/categories.
+          const themeIdentificationPrompt = `Analyze these comments and identify 3-8 distinct themes/categories that emerge from the content.
 
 Comments:
 ${commentsSample}
 
-Based on these comments, identify the main themes customers mention. For each theme, provide:
+Based on these comments, identify the main themes that appear. For each theme, provide:
 1. Theme name (2-4 words, business-focused)
 2. Brief description
 3. Key indicators/words that signal this theme
@@ -251,17 +251,17 @@ Respond in JSON format with an array of classifications:
                 
                 for (let i = 0; i < group.comments.length; i += sentimentBatchSize) {
                   const batch = group.comments.slice(i, i + sentimentBatchSize);
-                  const sentimentPrompt = `Analyze the sentiment of these customer feedback comments in a business context. You must classify price complaints as NEGATIVE.
+                  const sentimentPrompt = `Analyze the sentiment of these comments in a business context. Focus on the overall emotional tone and satisfaction level expressed.
 
 Comments:
 ${batch.map((comment, idx) => `${i + idx + 1}. ${comment.text}`).join('\n')}
 
 Classification Rules:
-- NEGATIVE: Any complaints including "too expensive", "overpriced", "costly", "not worth it", poor service, quality issues, dissatisfaction, problems
-- POSITIVE: Praise, satisfaction, "great value", "worth it", good experiences, recommendations
-- NEUTRAL: Factual statements, mixed feelings, unclear sentiment
+- NEGATIVE: Complaints, dissatisfaction, problems, criticism, frustration, disappointment, negative experiences
+- POSITIVE: Praise, satisfaction, appreciation, recommendations, positive experiences, expressions of happiness or contentment
+- NEUTRAL: Factual statements, mixed feelings, unclear sentiment, objective descriptions without clear emotional tone
 
-IMPORTANT: Price complaints are ALWAYS negative, even if phrased politely.
+IMPORTANT: Focus on the emotional tone and satisfaction level, not specific topics. Consider business context where complaints about any aspect (cost, quality, service, etc.) indicate dissatisfaction.
 
 Respond in JSON format:
 {
@@ -487,7 +487,7 @@ app.post('/api/chat', express.json(), async (req, res) => {
       })) || []
     } : null;
 
-    const chatPrompt = `You are an AI assistant analyzing customer feedback data. You have access to the following analysis results:
+    const chatPrompt = `You are an AI assistant analyzing comment data. You have access to the following analysis results:
 
 ${analysisContext ? `
 ANALYSIS DATA:
