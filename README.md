@@ -4,8 +4,7 @@ Transform hours of manual customer feedback analysis into minutes of AI-powered 
 
 ## Features
 
-- **LDA Topic Modeling**: Automatically discovers hidden themes
-- **GenAI Classification**: Uses Claude AI to name and categorize themes
+- **GenAI Theme Discovery**: Automatically discovers and classifies themes using the Claude AI.
 - **Business Intelligence**: Priority-ranked actionable insights
 - **Interactive Dashboard**: Professional UI with filters and chat
 - **Export Options**: PDF reports, CSV data, shareable links
@@ -47,6 +46,6 @@ PORT=3000
 
 ## Tech Stack
 
-- **Backend**: Node.js, Express, Natural.js, Claude AI
+- **Backend**: Node.js, Express, Claude AI
 - **Frontend**: HTML5, CSS3, JavaScript (Vanilla)
-- **AI/ML**: LDA Topic Modeling, K-Means Clustering, Claude Integration
+- **AI/ML**: GenAI Theme Discovery and Classification
