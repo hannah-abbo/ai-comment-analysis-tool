@@ -1194,32 +1194,31 @@
         function parseCSV(csvText, fileName) {
             // Handle different line endings and clean up the CSV text
             const normalizedText = csvText.trim().replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-            const lines = normalizedText.split('\n').filter(line => line.trim().length > 0); // Remove empty lines
             
-            console.log(`FRONTEND CSV PARSING: Found ${lines.length} non-empty lines (including header)`);
+            console.log(`FRONTEND CSV PARSING: Starting to parse CSV with ${normalizedText.length} characters`);
             
-            if (lines.length < 2) {
+            // Parse CSV properly handling quoted multi-line fields
+            const rows = parseCSVWithQuotes(normalizedText);
+            
+            console.log(`FRONTEND CSV PARSING: Found ${rows.length} total rows (including header)`);
+            
+            if (rows.length < 2) {
                 showError('CSV file must have at least a header row and one data row.');
                 return;
             }
 
-            const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+            const headers = rows[0];
+            console.log(`FRONTEND CSV PARSING: Headers found:`, headers);
             
             const data = [];
             let skippedRows = 0;
             
-            for (let i = 1; i < lines.length; i++) {
-                const line = lines[i].trim();
-                if (line.length === 0) {
-                    skippedRows++;
-                    continue; // Skip completely empty lines
-                }
-                
-                const values = parseCSVLine(line);
-                if (values.length === headers.length && values.some(val => val.trim().length > 0)) {
+            for (let i = 1; i < rows.length; i++) {
+                const values = rows[i];
+                if (values.length === headers.length && values.some(val => val && val.trim().length > 0)) {
                     const row = {};
                     headers.forEach((header, index) => {
-                        row[header] = values[index];
+                        row[header] = values[index] || '';
                     });
                     data.push(row);
                 } else {
@@ -1256,7 +1255,60 @@
             hideError();
         }
 
+        function parseCSVWithQuotes(csvText) {
+            const rows = [];
+            let currentRow = [];
+            let currentField = '';
+            let inQuotes = false;
+            let i = 0;
+            
+            while (i < csvText.length) {
+                const char = csvText[i];
+                const nextChar = csvText[i + 1];
+                
+                if (char === '"') {
+                    if (inQuotes && nextChar === '"') {
+                        // Escaped quote inside quoted field
+                        currentField += '"';
+                        i += 2; // Skip both quotes
+                        continue;
+                    } else {
+                        // Toggle quote mode
+                        inQuotes = !inQuotes;
+                    }
+                } else if (char === ',' && !inQuotes) {
+                    // Field separator
+                    currentRow.push(currentField.trim());
+                    currentField = '';
+                } else if (char === '\n' && !inQuotes) {
+                    // End of row
+                    currentRow.push(currentField.trim());
+                    if (currentRow.length > 0) {
+                        rows.push(currentRow);
+                    }
+                    currentRow = [];
+                    currentField = '';
+                } else {
+                    // Regular character (including newlines inside quotes)
+                    currentField += char;
+                }
+                
+                i++;
+            }
+            
+            // Don't forget the last field/row
+            if (currentField || currentRow.length > 0) {
+                currentRow.push(currentField.trim());
+                if (currentRow.length > 0) {
+                    rows.push(currentRow);
+                }
+            }
+            
+            return rows;
+        }
+
         function parseCSVLine(line) {
+            // Legacy function - kept for compatibility
             const result = [];
             let current = '';
             let inQuotes = false;
