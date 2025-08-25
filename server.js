@@ -32,13 +32,31 @@ app.post('/api/analyze', upload.single('file'), async (req, res) => {
   
   fs.createReadStream(filePath)
     .pipe(csv())
-    .on('data', (data) => results.push(data))
+    .on('data', (data) => {
+      // Only push rows that have at least one non-empty value
+      const hasContent = Object.values(data).some(value => 
+        value && typeof value === 'string' && value.trim().length > 0
+      );
+      if (hasContent) {
+        results.push(data);
+      }
+    })
     .on('end', async () => {
       try {
-        console.log(`Processing ${results.length} rows from CSV`);
+        console.log(`Processing ${results.length} non-empty rows from CSV`);
+        
+        // Remove potential duplicate rows from CSV parsing
+        const uniqueResults = results.filter((row, index, self) => {
+          const rowString = JSON.stringify(row);
+          return index === self.findIndex(r => JSON.stringify(r) === rowString);
+        });
+        
+        if (uniqueResults.length !== results.length) {
+          console.log(`DUPLICATE DETECTION: Removed ${results.length - uniqueResults.length} duplicate rows. Using ${uniqueResults.length} unique rows.`);
+        }
         
         // Auto-detect comment columns (look for text-heavy columns)
-        const sampleRow = results[0];
+        const sampleRow = uniqueResults[0];
         if (!sampleRow) {
           throw new Error('CSV file appears to be empty or invalid');
         }
@@ -46,7 +64,7 @@ app.post('/api/analyze', upload.single('file'), async (req, res) => {
         console.log('CSV columns found:', Object.keys(sampleRow));
         
         const commentColumns = Object.keys(sampleRow).filter(key => {
-          const avgLength = results.slice(0, 10).reduce((sum, row) => 
+          const avgLength = uniqueResults.slice(0, 10).reduce((sum, row) => 
             sum + (row[key] || '').length, 0) / 10;
           return avgLength > 10; // Lowered from 20 to 10 chars - more lenient
         });
@@ -55,7 +73,7 @@ app.post('/api/analyze', upload.single('file'), async (req, res) => {
         if (commentColumns.length === 0) {
           console.log('No comment columns detected, using all columns with text data');
           const allColumns = Object.keys(sampleRow).filter(key => {
-            const hasText = results.slice(0, 5).some(row => 
+            const hasText = uniqueResults.slice(0, 5).some(row => 
               (row[key] || '').trim().length > 0 && isNaN(row[key])
             );
             return hasText;
@@ -63,14 +81,25 @@ app.post('/api/analyze', upload.single('file'), async (req, res) => {
           commentColumns.push(...allColumns);
         }
         
-        console.log('Detected comment columns:', commentColumns);
+        console.log(`Detected comment columns (${commentColumns.length}):`, commentColumns);
         
-        const comments = results.map(row => {
+        // Extract comments with detailed logging
+        console.log('EXTRACTING COMMENTS - Processing each row...');
+        const allComments = uniqueResults.map((row, index) => {
           const commentText = commentColumns.map(col => row[col] || '').join(' ');
-          return commentText.toLowerCase().trim();
-        }).filter(comment => comment.length > 3); // Lowered from 10 to 3 chars - more lenient
+          const trimmedText = commentText.toLowerCase().trim();
+          
+          if (index < 5) { // Log first 5 rows for debugging
+            console.log(`Row ${index + 1}: "${trimmedText}" (length: ${trimmedText.length})`);
+          }
+          
+          return trimmedText;
+        });
         
-        console.log(`Extracted ${comments.length} valid comments from ${results.length} rows`);
+        const comments = allComments.filter(comment => comment.length > 3);
+        const filteredOutCount = allComments.length - comments.length;
+        
+        console.log(`FINAL COUNT CHECK: CSV has ${uniqueResults.length} rows, extracted ${allComments.length} comments total, ${comments.length} valid comments (filtered out ${filteredOutCount} too short)`);
         
         // Token estimation and warnings
         const avgTokensPerComment = 20; // Conservative estimate
@@ -289,6 +318,7 @@ Respond in JSON format with an array of classifications:
           }
 
           console.log(`Classified ${commentClassifications.length} comments into themes`);
+          console.log(`VALIDATION CHECK: Original comments array has ${comments.length} items, classifications array has ${commentClassifications.length} items`);
 
           // Step 3: Group comments by theme and calculate accurate percentages
           console.log('Step 3: Grouping comments and calculating percentages...');
@@ -485,12 +515,19 @@ Respond in JSON format with an array of classifications:
         
         fs.unlinkSync(filePath);
         
+        // Final validation - count total comments across all themes
+        const totalCommentsInThemes = cleanTopics.reduce((sum, topic) => sum + topic.volume, 0);
+        
         console.log(`Analysis complete! Returning ${cleanTopics.length} topics`);
+        console.log(`VALIDATION: Original CSV rows: ${results.length}, Unique rows: ${uniqueResults.length}, Final comments: ${comments.length}`);
+        console.log(`THEME VALIDATION: Total comments across all themes: ${totalCommentsInThemes}`);
+        console.log(`FINAL RESPONSE will show totalComments: ${comments.length}`);
         
         res.json({
           success: true,
           data: {
             totalComments: comments.length,
+            originalRowCount: results.length,
             coherenceScore: Math.round(coherenceScore * 100) / 100,
             avgWordCount,
             processingTime: Math.round((Date.now() - startTime) / 1000 * 10) / 10,

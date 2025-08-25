@@ -1192,7 +1192,12 @@
         }
 
         function parseCSV(csvText, fileName) {
-            const lines = csvText.trim().split('\n');
+            // Handle different line endings and clean up the CSV text
+            const normalizedText = csvText.trim().replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+            const lines = normalizedText.split('\n').filter(line => line.trim().length > 0); // Remove empty lines
+            
+            console.log(`FRONTEND CSV PARSING: Found ${lines.length} non-empty lines (including header)`);
+            
             if (lines.length < 2) {
                 showError('CSV file must have at least a header row and one data row.');
                 return;
@@ -1201,23 +1206,36 @@
             const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
             
             const data = [];
+            let skippedRows = 0;
+            
             for (let i = 1; i < lines.length; i++) {
-                const values = parseCSVLine(lines[i]);
-                if (values.length === headers.length) {
+                const line = lines[i].trim();
+                if (line.length === 0) {
+                    skippedRows++;
+                    continue; // Skip completely empty lines
+                }
+                
+                const values = parseCSVLine(line);
+                if (values.length === headers.length && values.some(val => val.trim().length > 0)) {
                     const row = {};
                     headers.forEach((header, index) => {
                         row[header] = values[index];
                     });
                     data.push(row);
+                } else {
+                    skippedRows++;
                 }
             }
 
+            console.log(`FRONTEND CSV PARSING: Processed ${data.length} valid rows, skipped ${skippedRows} invalid/empty rows`);
+            
             csvData = data;
             
             document.getElementById('fileInfo').style.display = 'block';
             document.getElementById('fileInfo').innerHTML = `
                 <strong>File ready for analysis:</strong> ${fileName}<br>
-                <strong>Rows:</strong> ${data.length} | <strong>Columns:</strong> ${headers.length}<br>
+                <strong>Valid Rows:</strong> ${data.length} | <strong>Columns:</strong> ${headers.length}<br>
+                ${skippedRows > 0 ? `<em>Skipped ${skippedRows} empty/invalid rows</em><br>` : ''}
                 <em>Ready to upload to server when analysis starts</em>
             `;
 
@@ -1634,11 +1652,15 @@
             allThemes = mockThemes.slice(0, analysisDepth);
             filteredThemes = [...allThemes];
             
-            const totalComments = allThemes.reduce((sum, theme) => sum + theme.size, 0);
+            // Use the original totalComments from the backend, not recalculated from themes
+            console.log('FRONTEND DEBUG: Original totalComments from backend:', analyzedResults.totalComments);
+            console.log('FRONTEND DEBUG: Theme sizes:', allThemes.map(t => `${t.name}: ${t.size}`));
+            const themeSum = allThemes.reduce((sum, theme) => sum + theme.size, 0);
+            console.log('FRONTEND DEBUG: Sum of theme sizes:', themeSum);
             
             const results = {
-                totalComments: totalComments,
-                avgWordCount: Math.round(allThemes.reduce((sum, theme) => sum + theme.avgWords * theme.size, 0) / totalComments),
+                totalComments: analyzedResults.totalComments, // Use backend value, not recalculated
+                avgWordCount: Math.round(allThemes.reduce((sum, theme) => sum + theme.avgWords * theme.size, 0) / analyzedResults.totalComments),
                 sentimentDistribution: {
                     positive: allThemes.filter(t => t.sentiment === 'positive').reduce((sum, t) => sum + t.size, 0),
                     neutral: allThemes.filter(t => t.sentiment === 'neutral').reduce((sum, t) => sum + t.size, 0),
