@@ -32,8 +32,18 @@ app.post('/api/analyze', upload.single('file'), async (req, res) => {
   const results = [];
   
   fs.createReadStream(filePath)
-    .pipe(csv())
+    .pipe(csv({
+      skipEmptyLines: true,
+      skipLinesWithError: false,
+      maxRowBytes: 1048576, // 1MB per row to handle large text fields
+      strict: false // Allow flexible parsing of malformed CSV
+    }))
     .on('data', (data) => {
+      // Debug: Log first few rows to see what's being parsed
+      if (results.length < 3) {
+        console.log(`BACKEND CSV ROW ${results.length + 1}:`, Object.keys(data), 'Values:', Object.values(data).map(v => `"${v}"`));
+      }
+      
       // Only push rows that have at least one non-empty value
       const hasContent = Object.values(data).some(value => 
         value && typeof value === 'string' && value.trim().length > 0
@@ -41,6 +51,9 @@ app.post('/api/analyze', upload.single('file'), async (req, res) => {
       if (hasContent) {
         results.push(data);
       }
+    })
+    .on('error', (error) => {
+      console.error('CSV parsing error:', error);
     })
     .on('end', async () => {
       try {
