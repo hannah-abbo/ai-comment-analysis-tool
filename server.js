@@ -12,6 +12,62 @@ const sentiment = require('sentiment');
 const _ = require('lodash');
 const Anthropic = require('@anthropic-ai/sdk');
 
+// Custom CSV parser that properly handles quoted multi-line fields
+function parseCSVContent(csvText) {
+  const rows = [];
+  let currentRow = [];
+  let currentField = '';
+  let inQuotes = false;
+  let i = 0;
+  
+  // Normalize line endings
+  const normalizedText = csvText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  
+  while (i < normalizedText.length) {
+    const char = normalizedText[i];
+    const nextChar = normalizedText[i + 1];
+    
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        // Escaped quote inside quoted field
+        currentField += '"';
+        i += 2; // Skip both quotes
+        continue;
+      } else {
+        // Toggle quote mode
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      // Field separator
+      currentRow.push(currentField.trim());
+      currentField = '';
+    } else if (char === '\n' && !inQuotes) {
+      // End of row
+      currentRow.push(currentField.trim());
+      if (currentRow.length > 0 && currentRow.some(field => field.length > 0)) {
+        rows.push(currentRow);
+      }
+      currentRow = [];
+      currentField = '';
+    } else {
+      // Regular character (including newlines inside quotes)
+      currentField += char;
+    }
+    
+    i++;
+  }
+  
+  // Don't forget the last field/row
+  if (currentField || currentRow.length > 0) {
+    currentRow.push(currentField.trim());
+    if (currentRow.length > 0 && currentRow.some(field => field.length > 0)) {
+      rows.push(currentRow);
+    }
+  }
+  
+  return rows;
+}
+
 // Initialize Anthropic client (requires ANTHROPIC_API_KEY environment variable)
 const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY
@@ -31,31 +87,42 @@ app.post('/api/analyze', upload.single('file'), async (req, res) => {
   const filePath = req.file.path;
   const results = [];
   
-  fs.createReadStream(filePath)
-    .pipe(csv({
-      skipEmptyLines: true,
-      skipLinesWithError: false,
-      maxRowBytes: 1048576, // 1MB per row to handle large text fields
-      strict: false // Allow flexible parsing of malformed CSV
-    }))
-    .on('data', (data) => {
-      // Debug: Log first few rows to see what's being parsed
-      if (results.length < 3) {
-        console.log(`BACKEND CSV ROW ${results.length + 1}:`, Object.keys(data), 'Values:', Object.values(data).map(v => `"${v}"`));
+  // Read the entire file and parse CSV manually to handle multi-line fields properly
+  const csvContent = fs.readFileSync(filePath, 'utf8');
+  console.log(`BACKEND: Read CSV file with ${csvContent.length} characters`);
+  
+  try {
+    const parsedRows = parseCSVContent(csvContent);
+    console.log(`BACKEND: Parsed ${parsedRows.length} rows from CSV`);
+    
+    if (parsedRows.length < 1) {
+      throw new Error('CSV file appears to be empty or invalid');
+    }
+    
+    const headers = parsedRows[0];
+    console.log(`BACKEND: CSV headers:`, headers);
+    
+    for (let i = 1; i < parsedRows.length; i++) {
+      const values = parsedRows[i];
+      if (values.length === headers.length) {
+        const row = {};
+        headers.forEach((header, index) => {
+          row[header] = values[index] || '';
+        });
+        
+        // Only push rows that have at least one non-empty value
+        const hasContent = Object.values(row).some(value => 
+          value && typeof value === 'string' && value.trim().length > 0
+        );
+        if (hasContent) {
+          results.push(row);
+        }
       }
-      
-      // Only push rows that have at least one non-empty value
-      const hasContent = Object.values(data).some(value => 
-        value && typeof value === 'string' && value.trim().length > 0
-      );
-      if (hasContent) {
-        results.push(data);
-      }
-    })
-    .on('error', (error) => {
-      console.error('CSV parsing error:', error);
-    })
-    .on('end', async () => {
+    }
+    
+    console.log(`BACKEND: Final processed rows: ${results.length}`);
+    
+    (async () => {
       try {
         console.log(`Processing ${results.length} non-empty rows from CSV`);
         
@@ -568,15 +635,16 @@ Respond in JSON format with an array of classifications:
           error: 'Analysis failed: ' + error.message 
         });
       }
-    })
-    .on('error', (error) => {
-      console.error('File processing error:', error);
-      fs.unlinkSync(filePath);
-      res.status(500).json({ 
-        success: false, 
-        error: 'File processing failed: ' + error.message 
-      });
+    })();
+    
+  } catch (error) {
+    console.error('CSV parsing error:', error);
+    fs.unlinkSync(filePath);
+    res.status(500).json({ 
+      success: false, 
+      error: 'CSV parsing failed: ' + error.message 
     });
+  }
 });
 
 // Real chatbot API endpoint with Claude integration
