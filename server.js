@@ -19,9 +19,11 @@ function parseCSVContent(csvText) {
   let currentField = '';
   let inQuotes = false;
   let i = 0;
+  let rowCount = 0;
   
   // Normalize line endings
   const normalizedText = csvText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  console.log(`PARSER DEBUG: Normalized text length: ${normalizedText.length}`);
   
   while (i < normalizedText.length) {
     const char = normalizedText[i];
@@ -36,6 +38,9 @@ function parseCSVContent(csvText) {
       } else {
         // Toggle quote mode
         inQuotes = !inQuotes;
+        if (rowCount < 3) {
+          console.log(`PARSER DEBUG: Quote ${inQuotes ? 'opened' : 'closed'} at position ${i}, char: "${char}"`);
+        }
       }
     } else if (char === ',' && !inQuotes) {
       // Field separator
@@ -45,6 +50,10 @@ function parseCSVContent(csvText) {
       // End of row
       currentRow.push(currentField.trim());
       if (currentRow.length > 0 && currentRow.some(field => field.length > 0)) {
+        rowCount++;
+        if (rowCount <= 3) {
+          console.log(`PARSER DEBUG: Adding row ${rowCount} with ${currentRow.length} fields, first field: "${currentRow[0].substring(0, 30)}..."`);
+        }
         rows.push(currentRow);
       }
       currentRow = [];
@@ -52,6 +61,9 @@ function parseCSVContent(csvText) {
     } else {
       // Regular character (including newlines inside quotes)
       currentField += char;
+      if (rowCount < 3 && char === '\n' && inQuotes) {
+        console.log(`PARSER DEBUG: Preserving newline inside quotes at position ${i}`);
+      }
     }
     
     i++;
@@ -61,10 +73,13 @@ function parseCSVContent(csvText) {
   if (currentField || currentRow.length > 0) {
     currentRow.push(currentField.trim());
     if (currentRow.length > 0 && currentRow.some(field => field.length > 0)) {
+      rowCount++;
+      console.log(`PARSER DEBUG: Adding final row ${rowCount} with ${currentRow.length} fields`);
       rows.push(currentRow);
     }
   }
   
+  console.log(`PARSER DEBUG: Total rows parsed: ${rows.length}`);
   return rows;
 }
 
@@ -92,15 +107,28 @@ app.post('/api/analyze', upload.single('file'), async (req, res) => {
   console.log(`BACKEND: Read CSV file with ${csvContent.length} characters`);
   
   try {
+    // Debug: Show first few lines of raw CSV to understand the format
+    const firstLines = csvContent.split('\n').slice(0, 10);
+    console.log(`BACKEND DEBUG: First 10 lines of raw CSV:`);
+    firstLines.forEach((line, i) => {
+      console.log(`Line ${i}: "${line}"`);
+    });
+    
     const parsedRows = parseCSVContent(csvContent);
     console.log(`BACKEND: Parsed ${parsedRows.length} rows from CSV`);
+    
+    // Debug: Show first few parsed rows
+    console.log(`BACKEND DEBUG: First 3 parsed rows:`);
+    parsedRows.slice(0, 3).forEach((row, i) => {
+      console.log(`Row ${i}: [${row.map(field => `"${field.substring(0, 50)}${field.length > 50 ? '...' : '"}"`).join(', ')}]`);
+    });
     
     if (parsedRows.length < 1) {
       throw new Error('CSV file appears to be empty or invalid');
     }
     
     const headers = parsedRows[0];
-    console.log(`BACKEND: CSV headers:`, headers);
+    console.log(`BACKEND: CSV headers (${headers.length}):`, headers);
     
     for (let i = 1; i < parsedRows.length; i++) {
       const values = parsedRows[i];
