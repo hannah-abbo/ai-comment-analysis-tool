@@ -301,23 +301,24 @@ Respond in JSON format with an array of themes:
           console.log('Step 2: Classifying each comment into themes...');
           
           const commentClassifications = [];
-          // AGGRESSIVE batch sizing to minimize API calls - target max 10 total batches
-          const maxBatches = 10;
-          const batchSize = Math.max(50, Math.ceil(comments.length / maxBatches)); // Minimum 50 per batch
+          // CONSERVATIVE batch sizing to avoid rate limits - smaller batches with longer delays
+          const maxBatchSize = 25; // Reduced from 50+ to avoid rate limits
+          const batchSize = Math.min(maxBatchSize, Math.ceil(comments.length / 20)); // Max 20 batches
           const actualBatches = Math.ceil(comments.length / batchSize);
           
-          console.log(`DYNAMIC BATCHING: ${comments.length} comments in ${actualBatches} batches of ~${batchSize} each`);
-          console.log(`Optimized batch size to minimize API calls while staying under rate limits`);
+          console.log(`CONSERVATIVE BATCHING: ${comments.length} comments in ${actualBatches} batches of ~${batchSize} each`);
+          console.log(`Small batch size to stay within rate limit acceleration guidelines`);
           
           for (let i = 0; i < comments.length; i += batchSize) {
             const batch = comments.slice(i, i + batchSize);
             const batchComments = batch.map((comment, index) => 
               `${i + index + 1}. ${comment}`).join('\n');
 
-            // LONG delays to avoid rate limits completely
+            // LONGER delays to avoid rate limit acceleration issues
             if (i > 0) {
-              console.log(`Waiting 10 seconds before batch ${Math.floor(i/batchSize) + 1}/${actualBatches} to avoid rate limits...`);
-              await new Promise(resolve => setTimeout(resolve, 10000)); // 10 second delay
+              const delaySeconds = Math.min(30, 15 + Math.floor(i/batchSize) * 2); // Progressive delays: 15s, 17s, 19s... up to 30s
+              console.log(`Waiting ${delaySeconds} seconds before batch ${Math.floor(i/batchSize) + 1}/${actualBatches} to avoid rate limits...`);
+              await new Promise(resolve => setTimeout(resolve, delaySeconds * 1000));
             }
 
             const classificationPrompt = `Classify each of these comments into one of the identified themes. Each comment should be assigned to exactly one theme.
@@ -386,10 +387,11 @@ Respond in JSON format with an array of classifications:
             } catch (batchError) {
               console.warn(`Classification failed for batch starting at ${i}:`, batchError.message);
               
-              // Handle rate limit errors specifically
+              // Handle rate limit errors with exponential backoff
               if (batchError.message.includes('429') || batchError.message.includes('rate_limit_error')) {
-                console.warn('Rate limit hit, waiting 60 seconds before continuing...');
-                await new Promise(resolve => setTimeout(resolve, 60000));
+                const backoffTime = Math.min(300, 60 + Math.floor(i/batchSize) * 30); // 60s, 90s, 120s... up to 5min
+                console.warn(`Rate limit hit, waiting ${backoffTime} seconds with exponential backoff...`);
+                await new Promise(resolve => setTimeout(resolve, backoffTime * 1000));
                 // Retry this batch once
                 try {
                   const retryResponse = await anthropic.messages.create({
