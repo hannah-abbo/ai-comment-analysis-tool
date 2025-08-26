@@ -120,7 +120,7 @@ app.post('/api/analyze', upload.single('file'), async (req, res) => {
     // Debug: Show first few parsed rows
     console.log(`BACKEND DEBUG: First 3 parsed rows:`);
     parsedRows.slice(0, 3).forEach((row, i) => {
-      console.log(`Row ${i}: [${row.map(field => `"${field.substring(0, 50)}${field.length > 50 ? '...' : '"}"`).join(', ')}]`);
+      console.log(`Row ${i}: [${row.map(field => '"' + field.substring(0, 50) + (field.length > 50 ? '...' : '') + '"').join(', ')}]`);
     });
     
     if (parsedRows.length < 1) {
