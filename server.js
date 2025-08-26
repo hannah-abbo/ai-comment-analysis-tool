@@ -122,9 +122,7 @@ app.post('/api/analyze', upload.single('file'), async (req, res) => {
         
         console.log(`Estimated tokens needed: ${estimatedTokens}`);
         
-        if (estimatedTokens > 50000) {
-          throw new Error(`Dataset too large: ${comments.length} comments (estimated ${estimatedTokens} tokens). Please reduce to under 2,000 comments to avoid API limits.`);
-        }
+        // Token limit check removed - allow processing up to 2000+ comments as requested
         
         if (estimatedTokens > 25000) {
           console.warn(`Large dataset warning: ${comments.length} comments may take 2-3 minutes and consume significant API credits.`);
